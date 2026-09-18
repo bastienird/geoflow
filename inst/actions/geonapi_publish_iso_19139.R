@@ -11,23 +11,25 @@ function(action, entity, config){
   #INSPIRE metadata validation
   geometa_inspire <- action$getOption("geometa_inspire")
   INSPIRE_VALIDATOR <- NULL
-  if(geometa_inspire){
-    #check inspire metadata validator configuration
-    INSPIRE_VALIDATOR <- config$software$output$inspire
-    if(is.null(INSPIRE_VALIDATOR)){
-      errMsg <- "This action requires a INSPIRE metadata validator software to be declared in the configuration"
-      config$logger.error(errMsg)
-      stop(errMsg)
-    }
-    config$logger.info("INSPIRE geometa option enabled: The record will be checked against the INSPIRE reference validator prior its publication")
-  }
+  #as of 2025-05-02, there is no need anymore to have an API key to validate metadata
+  #therefore the INSPIRE metadata validator software declaration is not needed
+  # if(geometa_inspire){
+  #   #check inspire metadata validator configuration
+  #   INSPIRE_VALIDATOR <- config$software$output$inspire
+  #   if(is.null(INSPIRE_VALIDATOR)){
+  #     errMsg <- "This action requires a INSPIRE metadata validator software to be declared in the configuration"
+  #     config$logger$ERROR(errMsg)
+  #     stop(errMsg)
+  #   }
+  #   config$logger$INFO("INSPIRE geometa option enabled: The record will be checked against the INSPIRE reference validator prior its publication")
+  # }
   
   #shortcut for gn config
   GN <- config$software$output$geonetwork
   
   if(is.null(GN)){
     errMsg <- "This action requires a Geonetwork software to be declared in the configuration"
-    config$logger.error(errMsg)
+    config$logger$ERROR(errMsg)
     stop(errMsg)
   }
   
@@ -56,7 +58,7 @@ function(action, entity, config){
     available_groups <- GN$getGroups()
     if(!group %in% available_groups[[group_match_col]]){
       errMsg <- sprintf("Geonetwork: no group for %s = %s - Please check below the Geonetwork available groups",group_match_col, group)
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       print(available_groups)
       stop(errMsg)
     }else{
@@ -70,7 +72,7 @@ function(action, entity, config){
     available_categories <- GN$getCategories()
     if(!category %in% available_categories[[category_match_col]]){
       errMsg <- sprintf("Geonetwork: no category for %s = %s - Please check below the Geonetwork available categories",category_match_col, category)
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       print(available_categories)
       stop(errMsg)
     }
@@ -82,6 +84,19 @@ function(action, entity, config){
              }
              GN$insertRecord(geometa = md, group = group, category = category,
                              uuidProcessing = "OVERWRITE", geometa_inspire = inspire, geometa_inspireValidator = INSPIRE_VALIDATOR)
+             #config privileges
+             config <- GNPrivConfiguration$new()
+             config$setPrivileges(as.character(group), privs)
+             if(!is.null(entity$data)){
+               if(entity$data$restricted){
+                 config$setPrivileges("all", c("view"))
+               }else{
+                 config$setPrivileges("all", privs)
+               }
+             }else{
+               config$setPrivileges("all", privs)
+             }
+             GN$setPrivConfiguration(id = mdId, config = config)
            },
            "GNLegacyAPIManager" = {
              if(category_match_col=="id"){
@@ -94,7 +109,16 @@ function(action, entity, config){
                                            geometa_inspire = inspire, geometa_inspireValidator = INSPIRE_VALIDATOR)
                #config privileges
                config <- GNPrivConfiguration$new()
-               config$setPrivileges("all", privs)
+               config$setPrivileges(as.character(group), privs)
+               if(!is.null(entity$data)){
+                 if(entity$data$restricted){
+                   config$setPrivileges("all", c("view"))
+                 }else{
+                   config$setPrivileges("all", privs)
+                 }
+               }else{
+                 config$setPrivileges("all", privs)
+               }
                GN$setPrivConfiguration(id = created, config = config)
              }else{
                #update a metadata
@@ -103,7 +127,12 @@ function(action, entity, config){
                
                #config privileges
                gn_config <- GNPrivConfiguration$new()
-               gn_config$setPrivileges("all", privs)
+               config$setPrivileges(as.character(group), privs)
+               if(entity$data$restricted){
+                 config$setPrivileges("all", c("view"))
+               }else{
+                 config$setPrivileges("all", privs)
+               }
                GN$setPrivConfiguration(id = metaId, config = gn_config)
              }
            }
@@ -122,20 +151,24 @@ function(action, entity, config){
       #publication
       mdId = doPublish(metaFile, geometa_inspire)
       if(create_doi_on_datacite){
-        config$logger.info("Creating DOI on DataCite...")
-        config$logger.info("Checking DOI registration pre-conditions...")
-        checked = GN$doiCheckPreConditions(mdId)
-        if(checked){
-          config$logger.info("DOI registration pre-conditions are met, proceed with DOI registration")
-          created = GN$createDOI(mdId)
-          if(created){
-            doi_report = attr(created, "report")
-            doi = doi_report$doi
-            entity$identifiers$doi = doi
-            config$logger.info(sprintf("DOI '%s' successfuly created for metadata '%s'", doi, mdId))
+        if(is.null(entity$identifiers[["doi"]])){
+          config$logger$INFO("Creating DOI on DataCite...")
+          config$logger$INFO("Checking DOI registration pre-conditions...")
+          checked = GN$doiCheckPreConditions(mdId)
+          if(checked){
+            config$logger$INFO("DOI registration pre-conditions are met, proceed with DOI registration")
+            created = GN$createDOI(mdId)
+            if(created){
+              doi_report = attr(created, "report")
+              doi = doi_report$doi
+              entity$identifiers$doi = doi
+              config$logger$INFO("DOI '%s' successfuly created for metadata '%s'", doi, mdId)
+            }
+          }else{
+            config$logger$WARN("Aborting DOI creation, pre-conditions are not met!")
           }
         }else{
-          config$logger.warn("Aborting DOI creation, pre-conditions are not met!")
+          config$logger$WARN("A DOI is already declared as entity identifier, skip DOI creation on DataCite")
         }
       }
       
@@ -147,30 +180,30 @@ function(action, entity, config){
         })]
         #manage absolute paths
         if(length(entity_thumbnails)>0) entity_thumbnails <- lapply(entity_thumbnails, function(rel){
-          if(!is_absolute_path(rel$link)) rel$link <- file.path(config$session_wd, rel$link)
+          if(!geoflow::is_absolute_path(rel$link)) rel$link <- get_absolute_path(rel$link, base = config$wd)
           return(rel)
         })
         if(length(entity_thumbnails)>0) for(entity_thumbnail in entity_thumbnails){
           uploaded <- GN$uploadAttachment(mdId, entity_thumbnail$link)
           if(!is.null(uploaded)){
             desc <- if(!is.null(entity_thumbnail$description)) entity_thumbnail$description else ""
-            published <- GN$publishThumbnail(mdId, uploaded$url, desc)
+            published <- GN$publishThumbnail(mdId, uploaded$url, URLencode(desc))
             if(published){
-              config$logger.info(sprintf("Successfully published thumbnail '%s' to metadata '%s'",
-                                 entityt_thumbnail$link, mdId))
+              config$logger$INFO("Successfully published thumbnail '%s' to metadata '%s'",
+                                         entity_thumbnail$link, mdId)
             }else{
-              config$logger.error(sprintf("Error while publishing thumbnail file '%s' to metadata '%s'", 
-                                          entity_thumbnail$link, mdId))
+              config$logger$ERROR("Error while publishing thumbnail file '%s' to metadata '%s'", 
+                                          entity_thumbnail$link, mdId)
             }
           }else{
-            config$logger.error(sprintf("Error while attaching thumbnail file '%s' to metadata '%s'", 
-                                        entity_thumbnail$link, mdId))
+            config$logger$ERROR("Error while attaching thumbnail file '%s' to metadata '%s'", 
+                                        entity_thumbnail$link, mdId)
           }
         }
       }
       
     }else{
-      config$logger.warn(sprintf("No ISO 19115 XML metadata file to publish for entity '%s, skipping action!", entity$identifiers[["id"]]))
+      config$logger$WARN("No ISO 19115 XML metadata file to publish for entity '%s, skipping action!", entity$identifiers[["id"]])
     }
   }
   #geometa ISO 19110
@@ -183,7 +216,7 @@ function(action, entity, config){
     if(file.exists(metaFile)){
       mdId = doPublish(metaFile, geometa_inspire)
     }else{
-      config$logger.warn(sprintf("No ISO ISO 19110 XML metadata file to publish for entity '%s, skipping action!", entity$identifiers[["id"]]))
+      config$logger$WARN(sprintf("No ISO ISO 19110 XML metadata file to publish for entity '%s, skipping action!", entity$identifiers[["id"]]))
     }
   }
   

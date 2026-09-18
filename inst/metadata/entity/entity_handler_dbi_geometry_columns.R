@@ -1,33 +1,37 @@
 #handle_entities_dbi_geometry_columns
-handle_entities_dbi_geometry_columns <- function(config, source, handle = TRUE){
+handle_entities_dbi_geometry_columns <- function(handler, source, config, validate = TRUE, handle = TRUE){
   dbi <- config$software$input$dbi
   dbi_config <- config$software$input$dbi_config
+  dbi_user <- dbi_config$parameters$user
   if(is.null(dbi)){
     stop("There is no database input software configured to handle entities from DB")
   }
   
-  db_tables_query = sprintf("select * from geometry_columns where f_table_catalog = '%s'", source)
+  check_priv_geometry_columns_query <- sprintf("SELECT * FROM information_schema.table_privileges 
+                                                WHERE table_name = 'geometry_columns' AND
+                                                privilege_type = 'SELECT' AND
+                                                grantee IN('%s','PUBLIC')", dbi_user)
+  check_priv_geometry_columns = try(DBI::dbGetQuery(dbi, check_priv_geometry_columns_query))
+  if(nrow(check_priv_geometry_columns)==0){
+    warnMsg = sprintf("The 'geometry_columns' table is not granted for SELECT for public or user '%s'. An empty list of entities is returned!", dbi_user)
+    config$logger$WARN(warnMsg)
+    return(list())
+  }
+  
+  db_tables_query = sprintf("SELECT geo.* FROM geometry_columns AS geo 
+                             LEFT JOIN information_schema.table_privileges AS priv on geo.f_table_name = priv.table_name 
+                             WHERE geo.f_table_catalog = '%s' AND priv.privilege_type = 'SELECT' AND priv.grantee IN('%s','PUBLIC')",
+                            source, dbi_user)
   db_tables <- try(DBI::dbGetQuery(dbi, db_tables_query))
   if(is(db_tables,"try-error")){
     errMsg <- sprintf("Error while trying to execute DB query '%s'.", db_tables_query)
-    config$logger.error(errMsg)
+    config$logger$ERROR(errMsg)
     stop(errMsg)
   }
-  
-  #DB comment utils
-  #getDBTableComment
-  getDBTableComment = function(dbi, schema, table){
-    get_comment_sql = sprintf("select obj_description('%s.%s'::regclass, 'pg_class')",
-                              paste0('"',schema,'"'), paste0('"',table,'"'))
-    get_comment = DBI::dbGetQuery(dbi, get_comment_sql)
-    return(get_comment$obj_description)
-  }
-  #getDBTableColumnComment
-  getDBTableColumnComment = function(dbi, schema, table, column_index){
-    get_comment_sql = sprintf("select col_description('%s.%s'::regClass, %s)",
-                              paste0('"',schema,'"'), paste0('"',table,'"'), column_index)
-    get_comment = DBI::dbGetQuery(dbi, get_comment_sql)
-    return(get_comment$col_description)
+  if(nrow(db_tables)==0){
+    warnMsg = sprintf("No table granted for SELECT for public or user '%s'. An empty list of entities is returned!", dbi_user)
+    config$logger$WARN(warnMsg)
+    return(list())
   }
   
   #entities
@@ -47,37 +51,11 @@ handle_entities_dbi_geometry_columns <- function(config, source, handle = TRUE){
     entity$setType(key = "generic", "dataset")
     
     #data
-    entity_data = geoflow_data$new()
-    sql = sprintf("select * from %s.%s", paste0('"',db_table$f_table_schema,'"'), paste0('"',db_table$f_table_name,'"'))
-    entity_data$setSourceSql(sql)
-    entity_data$setSourceType("dbquery")
-    entity_data$setSpatialRepresentationType("vector")
-    entity_data$setUploadType("dbtable")
-    entity_data$setUploadSource(db_table$f_table_name)
-    #data/feature type
-    fto = geoflow_featuretype$new(id = id)
-    data_sample = sf::st_read(dbi, query = paste(sql, "limit 1;"))
-    for(colname in colnames(data_sample)){
-      col_idx = which(colnames(data_sample) == colname)
-      col_comment = getDBTableColumnComment(dbi, db_table$f_table_schema, db_table$f_table_name, col_idx)
-      if(is.na(col_comment)) col_comment = colname
-      
-      ftm = geoflow_featuremember$new(
-        type = if(is(data_sample[[colname]], "character")) "attribute" else "variable",
-        code = colname,
-        name = col_comment,
-        def = col_comment,
-        defSource = NA,
-        minOccurs = 0,
-        maxOccurs = 1,
-        uom = NA
-      )
-      fto$addMember(ftm)
-    }
-    entity_data$setFeatureType(id)
-    entity_data$setFeatureTypeObj(fto)
-  
+    entity_data = create_geoflow_data_from_dbi(dbi, db_table$f_table_schema, db_table$f_table_name)
     entity$setData(entity_data)
+    
+    #feth layer_styles (if any) from DBI
+    entity = fetch_layer_styles_from_dbi(entity, dbi, db_table$f_table_schema, db_table$f_table_name)
         
     return(entity)
   })

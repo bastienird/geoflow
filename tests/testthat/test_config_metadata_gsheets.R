@@ -10,12 +10,13 @@ cfg_file = system.file("extdata/workflows/config_metadata_gsheets.json", package
 
 #init
 test_that("init",{
-  CFG <- geoflow::initWorkflow(cfg_file)
+  testthat::skip_on_cran()
+  CFG <- geoflow::initWorkflow(cfg_file, dir = tempdir())
   expect_is(CFG$metadata$content, "list")
   expect_equal(length(CFG$metadata$content), 2L)
   expect_equal(names(CFG$metadata$content), c("contacts", "entities"))
-  expect_equal(length(CFG$metadata$content$contacts), 3L)
-  expect_equal(length(CFG$getContacts()), 3L)
+  expect_equal(length(CFG$metadata$content$contacts), 4L)
+  expect_equal(length(CFG$getContacts()), 4L)
   expect_equal(length(CFG$metadata$content$entities), 2L)
   expect_equal(length(CFG$getEntities()), 2L)
   expect_equal(length(CFG$actions), 0L)
@@ -27,8 +28,9 @@ test_that("init",{
 
 #debug
 test_that("debug",{
-  DEBUG <- geoflow::debugWorkflow(cfg_file)
-  expect_equal(names(DEBUG), c("config", "entity"))
+  testthat::skip_on_cran()
+  DEBUG <- geoflow::debugWorkflow(cfg_file, dir = tempdir())
+  expect_equal(names(DEBUG), c("config", "entity", "dir"))
   expect_is(DEBUG$config, "list")
   expect_is(DEBUG$entity, "geoflow_entity")
   expect_equal(DEBUG$entity$identifiers[["id"]], "my-geoflow-record")
@@ -37,6 +39,7 @@ test_that("debug",{
 
 #execute
 test_that("execute",{
-  EXEC <- geoflow::executeWorkflow(cfg_file, dir = ".")
+  testthat::skip_on_cran()
+  EXEC <- geoflow::executeWorkflow(cfg_file, dir = tempdir())
   expect_true(dir.exists(EXEC))
 })

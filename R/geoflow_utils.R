@@ -46,6 +46,8 @@ sanitize_date <- function(date){
         date <- as.Date(date)
       }else if(nchar(date)==7){
         date <- as.Date(paste0(date,"-01"))
+      }else if(nchar(date)==4){
+        date <- as.Date(paste0(date,"-01-01"))
       }else{
         date <- as.POSIXct(date) 
       }
@@ -150,6 +152,7 @@ extract_kvp <- function(str){
 #' @export
 #'
 extract_kvps <- function(strs, collapse = NULL){
+  strs = strs[!sapply(strs, endsWith, ":")]
   kvps <- lapply(strs, function(str){
     kvp <- extract_kvp(str)
     if(!is.null(collapse)) kvp$values <- list(paste0(kvp$values, collapse = collapse))
@@ -211,6 +214,53 @@ get_locales_from <- function(values){
   return(locales)
 }
 
+#'@name set_locales_to
+#'@aliases set_locales_to
+#'@title set_locales_to
+#'@description Set locales to a property values set
+#'
+#'@usage set_locales_to(values,locales)
+#'
+#'@param values values
+#'@param locales locales
+#'
+#'@export
+set_locales_to <- function(values, locales = list()){
+  for(lang in names(locales)){
+    attr(values, paste0("locale#", lang)) <- locales[[lang]]
+  }
+  return(values)
+}
+
+#'@name set_i18n
+#'@aliases set_i18n
+#'@title set_i18n
+#'@description Set default locales to a property values set
+#'
+#'@usage set_i18n(term_key, default, expr, ...)
+#'
+#'@param term_key term key
+#'@param default default
+#'@param expr expr
+#'@param ... named values to be passed to expr
+#'
+#'@export
+set_i18n <- function(term_key, default = NULL, expr = "{{term}}", ...){
+  
+  i18n_terms = jsonlite::read_json(system.file("metadata/i18n.json", package = "geoflow"))
+  if(!term_key %in% names(i18n_terms)) stop(sprintf("Term '%s' not defined in i18n.json file!"))
+  locales = i18n_terms[[term_key]]
+  
+  if(regexpr("\\{\\{term\\}\\}", expr) == -1) stop(sprintf("Expression 'expr' should at least include the key '{{term}}'"))
+  
+  set_locales_to(
+    values = whisker::whisker.render(expr, c(term = if(!is.null(default)) default else locales[[1]], list(...))), 
+    locales = lapply(locales, function(x){
+      whisker::whisker.render(expr, c(term = x, list(...)))
+    })
+  )
+}
+
 #' @name str_to_posix
 #' @aliases str_to_posix
 #' @title str_to_posix
@@ -225,9 +275,15 @@ get_locales_from <- function(values){
 #'
 str_to_posix <- function(str){
   out <- str
-  if(is(str,"character")) if(nchar(str)>7){
-    str_format <- if(nchar(str)==10) "%Y-%m-%d" else "%Y-%m-%dT%H:%M:%S"
-    out <- as.POSIXct(str, format = str_format, tz = ifelse(endsWith(str,"Z"), "UTC", ""))
+  if(is(str,"character")){
+    if(nchar(str)>7){
+      str_format <- if(nchar(str)==10) "%Y-%m-%d" else "%Y-%m-%dT%H:%M:%S"
+      out <- as.POSIXct(str, format = str_format, tz = ifelse(endsWith(str,"Z"), "UTC", ""))
+    }
+    if(str == "NA"){
+      out = NA
+      attr(out, "indeterminatePosition") <- "unknown"
+    } 
   }
   return(out)
 }
@@ -296,7 +352,8 @@ filter_sf_by_cqlfilter <- function(sfdata, cqlfilter){
 #' @export
 #'
 extract_cell_components <- function(str){
-  lines <- unlist(strsplit(str, get_line_separator()))
+  separator = if(get_line_separator() == "_\n") "_\\r?\\n" else get_line_separator()
+  lines <- unlist(strsplit(str, separator))
   return(lines)
 }
 
@@ -436,27 +493,23 @@ check_packages <- function(pkgs){
   return(pkgs_df)
 }
 
-#'@name add_config_utils
-#'@aliases add_config_utils
-#'@title add_config_utils
-#'@description \code{add_config_utils} adds util functions needed (logger, log_separator) to the configuratino object
+#'@name add_config_logger
+#'@aliases add_config_logger
+#'@title add_config_logger
+#'@description \code{add_config_logger} enables a logger (managed with the internal 
+#'class \link{geoflowLogger}).
 #'
-#'@usage add_config_utils(config)
+#'@usage add_config_logger(config)
 #'
 #'@param config object of class \link{list}
 #'
 #' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
 #' @export
-add_config_utils <- function(config){
+add_config_logger <- function(config){
   id <- if(!is.null(config$profile$id)) config$profile$id else config$id
-  config$logger <- function(type, text){
-    txt <- text #use this to make sure sprintf calls don't conflict with next sprintf call
-    cat(sprintf("[geoflow][%s][%s] %s \n", id, type, txt))
-  }
-  config$logger.info <- function(text){config$logger("INFO", text)}
-  config$logger.warn <- function(text){config$logger("WARN", text)}
-  config$logger.error <- function(text){config$logger("ERROR", text)}
-  config$log_separator <- function(char){cat(paste0(paste0(rep(char,100),collapse=""),"\n"))}
+  if(is.null(config$verbose)) config$verbose = TRUE
+  if(is.null(config$debug)) config$debug = FALSE
+  config$logger <- geoflowLogger$new(verbose = config$verbose, debug = config$debug)
   return(config)
 }
 
@@ -475,6 +528,7 @@ add_config_utils <- function(config){
 #' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
 #' @export
 load_workflow_environment <- function(config, session = NULL){
+  config$logger = NULL
   config_str <- jsonlite::toJSON(config, auto_unbox = TRUE)
   
   #grab shiny session userData if any session specified
@@ -491,7 +545,7 @@ load_workflow_environment <- function(config, session = NULL){
   config_str <- whisker::whisker.render(config_str, c(as.list(Sys.getenv()), userdata))
 
   config <- jsonlite::parse_json(config_str)
-  config <- add_config_utils(config)
+  config <- add_config_logger(config)
   return(config)
 }
 
@@ -538,23 +592,25 @@ dotenv_parse_dot_line <- function (line) {
 #' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
 #' @export
 unload_workflow_environment <- function(config){
-  env_vars_workflow <- as.list(Sys.getenv())
-  envfile <- config$profile_config$environment$file
-  if(!is.null(envfile)){
-    tmp <- readLines(envfile)
-    tmp <- dotenv_ignore_comments(tmp)
-    tmp <- dotenv_ignore_empty_lines(tmp)
-    if (length(tmp) > 0){
-      tmp <- lapply(tmp, dotenv_parse_dot_line)
-      tmp <- structure(.Data = lapply(tmp, "[[", "value"), .Names = sapply(tmp, "[[", "key"))
-      
-      #remove env vars based on .env file
-      Sys.unsetenv(names(tmp))
-      
-      #reset env vars previously in session env
-      env_vars_before <- config$session_env
-      env_vars_to_reset <- setdiff(env_vars_before, env_vars_workflow)
-      if(length(env_vars_to_reset)>0) do.call(Sys.setenv, env_vars_to_reset)
+  if(!is.null(config$profile_config$environment[["_filepath"]])){
+    env_vars_workflow <- as.list(Sys.getenv())
+    envfile <- get_absolute_path(config$profile_config$environment[["_filepath"]], base = config$wd)
+    if(!is.null(envfile)){
+      tmp <- readLines(envfile)
+      tmp <- dotenv_ignore_comments(tmp)
+      tmp <- dotenv_ignore_empty_lines(tmp)
+      if (length(tmp) > 0){
+        tmp <- lapply(tmp, dotenv_parse_dot_line)
+        tmp <- structure(.Data = lapply(tmp, "[[", "value"), names = sapply(tmp, "[[", "key"))
+        
+        #remove env vars based on .env file
+        Sys.unsetenv(names(tmp))
+        
+        #reset env vars previously in session env
+        env_vars_before <- config$session_env
+        env_vars_to_reset <- setdiff(env_vars_before, env_vars_workflow)
+        if(length(env_vars_to_reset)>0) do.call(Sys.setenv, env_vars_to_reset)
+      }
     }
   }
 }
@@ -574,6 +630,58 @@ unload_workflow_environment <- function(config){
 
 is_absolute_path <- function(path) {
   grepl("^(/|[A-Za-z]:|\\\\|~)", path)
+}
+
+#' @name get_absolute_path
+#' @aliases get_absolute_path
+#' @title get_absolute_path
+#' @description \code{get_absolute_path} allows to get the absolute path of a resource
+#' given a base directory
+#' 
+#' @usage get_absolute_path(path, base, mustWork, expand_tilde)
+#' 
+#' @param path a path in character string
+#' @param base a base direcotry
+#' @param mustWork must work?
+#' @param expand_tilde expand tilde?
+#' 
+#' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#' @export
+get_absolute_path <- function(path, base = getwd(), mustWork = FALSE, expand_tilde = TRUE) {
+  path <- as.character(path)
+  base <- as.character(base)[1L]
+  if (expand_tilde) {
+    path <- ifelse(startsWith(path, "~"), path.expand(path), path)
+    base <- path.expand(base)
+  }
+  combined <- ifelse(is_absolute_path(path), path, file.path(base, path))
+  normalizePath(combined, winslash = "/", mustWork = mustWork)
+}
+
+#' @name bbox_to_sf
+#' @title bbox_to_sf
+#' @description Creates a \pkg{sf} object out of a bounding box
+#' 
+#' @param xmin xmin
+#' @param ymin ymin
+#' @param xmax xmax
+#' @param ymax ymax
+#' @param crs Defaut is 4326
+#' @return an object of class \code{sf}
+#' 
+#' @author Emmanuel Blondel \email{emmanuel.blondel1@@gmail.com}
+#' @export
+#'
+bbox_to_sf <- function(xmin, ymin, xmax, ymax, crs = 4326){
+  pts = matrix(c(
+    xmin, ymin,
+    xmin, ymax,
+    xmax, ymax,
+    xmax, ymin,
+    xmin, ymin
+  ), ncol=2, byrow=TRUE)
+  poly = sf::st_sf(geom = sf::st_sfc(sf::st_polygon(list(pts)), crs = crs))
+  return(poly)
 }
 
 #'@name get_union_bbox
@@ -653,8 +761,270 @@ get_config_resource_path <- function(config, path){
   is_url <- regexpr("(http|https)[^([:blank:]|\\\"|<|&|#\n\r)]+", path) > 0
   if(is_url) return(path)
   if(!is_absolute_path(path)){
+    path_root = config$wd
+    mtch = gregexpr("\\.\\./", path)[[1]]
+    mtch = mtch[mtch != -1]
+    if(length(mtch)>0) for(i in 1:length(mtch)){
+      path_root = dirname(path_root)
+    }
+    path = gsub("\\.\\./", "", path)
     if(startsWith("./", path)) path = unlist(strsplit(path, "\\./"))[2]
-    path = file.path(config$root, path)
+    path = file.path(path_root, path)
   }
   return(path)
+}
+
+#'@name getDBTableComment
+#'@aliases getDBTableComment
+#'@title getDBTableComment
+#'
+#'@usage getDBTableComment(dbi, schema, table)
+#'
+#'@param dbi a dbi connection
+#'@param schema schema
+#'@param table table
+#'@return the table comment
+
+#'@author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#'@export
+getDBTableComment = function(dbi, schema, table){
+  get_comment_sql = sprintf("select obj_description('%s.%s'::regclass, 'pg_class')",
+                            paste0('"',schema,'"'), paste0('"',table,'"'))
+  get_comment = DBI::dbGetQuery(dbi, get_comment_sql)
+  return(get_comment$obj_description)
+}
+
+#'@name getDBTableColumnComment
+#'@aliases getDBTableColumnComment
+#'@title getDBTableColumnComment
+#'
+#'@usage getDBTableColumnComment(dbi, schema, table, column_index)
+#'
+#'@param dbi a dbi connection
+#'@param schema schema
+#'@param table table
+#'@param column_index table column index
+#'@return the table comment
+#'@author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#'@export
+getDBTableColumnComment = function(dbi, schema, table, column_index){
+  get_comment_sql = sprintf("select col_description('%s.%s'::regClass, %s)",
+                            paste0('"',schema,'"'), paste0('"',table,'"'), column_index)
+  get_comment = DBI::dbGetQuery(dbi, get_comment_sql)
+  return(get_comment$col_description)
+}
+
+#'@name create_geoflow_data_from_dbi
+#'@aliases create_geoflow_data_from_dbi
+#'@title create_geoflow_data_from_dbi
+#'
+#'@usage create_geoflow_data_from_dbi(dbi, schema, table)
+#'
+#'@param dbi a dbi connection
+#'@param schema schema
+#'@param table table
+#'
+#'@author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#'@export
+create_geoflow_data_from_dbi <- function(dbi, schema, table){
+  entity_data = geoflow_data$new()
+  sql = sprintf("select * from %s.%s", paste0('"',schema,'"'), paste0('"',table,'"'))
+  entity_data$setSourceSql(sql)
+  entity_data$setSourceType("dbquery")
+  entity_data$setSpatialRepresentationType("vector")
+  entity_data$setUploadType("dbtable")
+  entity_data$setUploadSource(table)
+  #data/feature type
+  fto = geoflow_featuretype$new(id = table)
+  data_sample = sf::st_read(dbi, query = paste(sql, "limit 1;"))
+  for(colname in colnames(data_sample)){
+    col_idx = which(colnames(data_sample) == colname)
+    col_comment = getDBTableColumnComment(dbi, schema, table, col_idx)
+    if(is.na(col_comment)) col_comment = colname
+    
+    ftm = geoflow_featuremember$new(
+      type = if(is(data_sample[[colname]], "character")) "attribute" else "variable",
+      code = colname,
+      name = col_comment,
+      def = col_comment,
+      defSource = NA,
+      minOccurs = 0,
+      maxOccurs = 1,
+      uom = NA
+    )
+    fto$addMember(ftm)
+  }
+  entity_data$setFeatureType(table)
+  entity_data$setFeatureTypeObj(fto)
+  return(entity_data)
+}
+
+#'@name fetch_layer_styles_from_dbi
+#'@aliases fetch_layer_styles_from_dbi
+#'@title fetch_layer_styles_from_dbi
+#'
+#'@usage fetch_layer_styles_from_dbi(entity, dbi, schema, table)
+#'
+#'@param entity a \link{geoflow_entity} to be used and enriched
+#'@param dbi a dbi connection
+#'@param schema schema
+#'@param table table
+#'@return the entity, enriched with layer styles
+#'
+#'@author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#'@export
+fetch_layer_styles_from_dbi <- function(entity, dbi, schema, table){
+  if(DBI::dbExistsTable(dbi, "layer_styles")){
+    #assume this is a special table
+    styles_sql = sprintf("select * from layer_styles where f_table_schema='%s' and f_table_name='%s'", 
+                         schema, table)
+    styles = DBI::dbGetQuery(dbi, statement = styles_sql)
+    if(nrow(styles)>0){
+      styles[order(styles$useasdefault,decreasing = T),] #make sure we list the default one first
+      #add style names in geoflow_data
+      for(i in 1:nrow(styles)){
+        style = styles[i,]
+        entity$data$addStyle(style$stylename)
+      }
+      #add style defs as entity resource to delegate copy after entity dir is created
+      entity$addResource("layer_styles", styles)
+    }
+  }
+  return(entity)
+}
+
+#'@name describeOGCRelation
+#'@aliases describeOGCRelation
+#'@title describeOGCRelation
+#'
+#'@usage describeOGCRelation(entity, data_object, service, download, format,
+#'                           handle_category, handle_ogc_service_description, handle_format)
+#'
+#'@param entity the entity considered
+#'@param data_object data object
+#'@param service service acronym
+#'@param download whether the relation should be a download one or not
+#'@param format format
+#'@param handle_category append the relation category
+#'@param handle_ogc_service_description append the OGC service description
+#'@param handle_format append the download format
+#'
+#'@author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#'@export
+describeOGCRelation <- function(entity, data_object, service, download = FALSE, format = NULL,
+                                handle_category = TRUE, handle_ogc_service_description = TRUE, handle_format = TRUE){
+  
+  layername <- if(!is.null(data_object$layername)) data_object$layername else entity$identifiers$id
+  layertitle = if(!is.null(data_object$layertitle)) data_object$layertitle else layername
+  
+  out <- switch(tolower(service),
+                "wms" = {
+                  out_wms_link = layertitle
+                  if(handle_category) out_wms_link = set_i18n(
+                    term_key = "map_access", 
+                    expr = {
+                      the_expr = "{{out_wms_link}} - {{term}}"
+                      if(handle_ogc_service_description) the_expr = paste0(the_expr," - OGC Web Map Service (WMS)")
+                      the_expr
+                    },
+                    out_wms_link = out_wms_link
+                  )
+                  out_wms_link
+                },
+                "wfs" = {
+                  out_wfs_link = layertitle
+                  if(handle_category) out_wfs_link = set_i18n(
+                    term_key = if(download) "data_download" else "data_features_access",
+                    expr = {
+                      the_expr = "{{out_wfs_link}} - {{term}}"
+                      if(handle_ogc_service_description) the_expr = paste0(the_expr, " - OGC Web Feature Service (WFS)")
+                      if(handle_format && !is.null(format)) the_expr = paste0(the_expr, " - ", format)
+                      the_expr
+                    },
+                    out_wfs_link = out_wfs_link
+                  )
+                  out_wfs_link
+                },
+                "wcs" = {
+                  out_wcs_link = layertitle
+                  if(handle_category) out_wcs_link = set_i18n(
+                    term_key = if(download) "data_download" else "data_coverage_access",
+                    expr = {
+                      the_expr = "{{out_wcs_link}} - {{term}}"
+                      if(handle_ogc_service_description) the_expr = paste0(the_expr, " - OGC Web Coverage Service (WCS)")
+                      if(handle_format && !is.null(format)) the_expr = paste0(the_expr, " - ", format)
+                      the_expr
+                    },
+                    out_wcs_link = out_wcs_link
+                  )
+                  out_wcs_link
+                }
+  )
+  return(out)
+}
+
+#'@name create_object_identification_id
+#'@aliases create_object_identification_id
+#'@title create_object_identification_id
+#'
+#'@usage create_object_identification_id(prefix, str)
+#'
+#'@param prefix a character string
+#'@param str a character string
+#'@return a digested character string
+#'@export
+create_object_identification_id = function(prefix, str){
+  paste(prefix, digest::digest(object = str, algo = "crc32", serialize = FALSE), sep = "_")
+}
+
+
+#'@description precompute_relationships
+#'@aliases precompute_relationships
+#'@title precompute_relationships
+#'
+#'@usage precompute_relationships(data, parent_key, child_key, child_label)
+#'
+#'@param data data
+#'@param parent_key parent_key
+#'@param child_key child_key
+#'@param child_label child_label
+#'@return a list of relationships
+#'@export
+precompute_relationships <- function (data, parent_key, child_key, child_label) {
+  ordered_data <- data[order(data[[parent_key]], data[[child_key]]), ]
+  relationships <- split(ordered_data[[child_key]], ordered_data[[parent_key]])
+  rel_names = names(relationships)
+  relationships <- lapply(relationships, function(x) {
+      lapply(x, function(x_el) {
+          attr(x_el, "label") = data[data[, child_key] == x_el, 
+              child_label][1]
+          return(x_el)
+      })
+  })
+  names(relationships) = rel_names
+  return(relationships)
+}
+
+
+#'@name build_hierarchical_list
+#'@aliases build_hierarchical_list
+#'@title build_hierarchical_list
+#'
+#'@usage build_hierarchical_list(parent, relationships)
+#'
+#'@param parent parent
+#'@param relationships relationships
+#'@return a hierarchical list
+#'@export
+build_hierarchical_list <- function(parent, relationships) {
+  children <- relationships[[parent]]
+  children_names <- sapply(children, function(x){attr(x, "label")})
+  children = children[order(children_names)]
+  out <- list(text = if(parent == "<root>") parent else attr(parent, "label") )
+  if(is.null(children)){
+    out$icon = "fa-regular fa-note-sticky"
+  }else{
+    out$children <- lapply(children, build_hierarchical_list, relationships)
+  }
+  return(out)
 }

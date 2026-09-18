@@ -8,6 +8,15 @@ function(action, entity, config){
   options <- action$options
   createWorkspace <- action$getOption("createWorkspace")
   createStore <- action$getOption("createStore")
+  store_basepath <- action$getOption("store_basepath")
+  store_basepath_match = attr(regexpr("^/+", store_basepath), "match.length")
+  if(store_basepath_match > 0){
+    if(store_basepath_match<3){
+      store_basepath = paste0(paste0(rep("/",3-store_basepath_match),collapse=""), store_basepath)
+    }else{
+      store_basepath = paste0("///", substr(store_basepath, start = max(store_basepath_match)+1, nchar(store_basepath)))
+    }
+  }
   store_description <- action$getOption("store_description")
   overwrite <- action$getOption("overwrite")
   overwrite_upload <- action$getOption("overwrite_upload")
@@ -21,12 +30,12 @@ function(action, entity, config){
   if(is.null(entity$data)){
     warnMsg <- sprintf("No data object associated to entity '%s'. Skipping data publication!", 
                        entity$identifiers[["id"]])
-    config$logger.warn(warnMsg)
+    config$logger$WARN(warnMsg)
     return(NULL)
   }
   
   data_objects <- list()
-  if(is.null(entity$data$dir)){
+  if(length(entity$data$getData())==0){
     data_objects <- list(entity$data)
   }else{
     data_objects <- entity$data$getData()
@@ -54,7 +63,7 @@ function(action, entity, config){
     GS <- config$software$output$geoserver
     if(is.null(GS)){
       errMsg <- "This action requires a GeoServer software to be declared in the configuration"
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
     
@@ -62,7 +71,7 @@ function(action, entity, config){
     if(!is.null(data_object$workspaces$geoserver)) workspace <- data_object$workspaces$geoserver
     if(is.null(workspace)){
       errMsg <- "The geoserver configuration requires a workspace for publishing action"
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
     
@@ -70,13 +79,13 @@ function(action, entity, config){
     if(!is.null(data_object$store)) store <- data_object$store
     if(is.null(store)){
       errMsg <- "The geoserver configuration requires a data/coverage store for publishing action"
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
     
     if(data_object$uploadType == "other"){
       warnMsg <- "No 'geosapi' action possible for type 'other'. Action skipped"
-      config$logger.warn(warnMsg)
+      config$logger$WARN(warnMsg)
       return(NULL)
     }
     
@@ -103,7 +112,7 @@ function(action, entity, config){
                    name = store, 
                    description = store_description , 
                    enabled = TRUE, 
-                   database = paste0("file:data/",workspace,"/",datasource_name,".gpkg")
+                   database = paste0("file:",store_basepath,"/",workspace,"/",datasource_name,".gpkg")
                  )
                },
                #vector/dbtable
@@ -113,13 +122,13 @@ function(action, entity, config){
                  if(is.null(dbi)) dbi<-config$software$output$dbi_config
                  if(is.null(dbi)) {
                    errMsg <- sprintf("Error during Geoserver '%s' datastore creation, this datastore type requires a DBI type software declaration in the configuration", store)
-                   config$logger.error(errMsg)
+                   config$logger$ERROR(errMsg)
                    stop(errMsg)   
                  }
                  Postgres<-dbi$parameters$drv %in% c("Postgres","PostgreSQL")
                  if(!Postgres){
                    errMsg <- sprintf("Error during Geoserver '%s' datastore creation, the DBI software declared in the configuration is not a PostGis database", store)
-                   config$logger.error(errMsg)
+                   config$logger$ERROR(errMsg)
                    stop(errMsg)   
                  }
                  the_store<-GSPostGISDataStore$new(name=store, description = store_description, enabled = TRUE)
@@ -137,13 +146,13 @@ function(action, entity, config){
                  if(is.null(dbi)) dbi<-config$software$output$dbi_config
                  if(is.null(dbi)) {
                    errMsg <- sprintf("Error during Geoserver '%s' datastore creation, this datastore type requires a DBI type software declaration in the configuration", store)
-                   config$logger.error(errMsg)
+                   config$logger$ERROR(errMsg)
                    stop(errMsg)   
                  }
                  Postgres<-dbi$parameters$drv %in% c("Postgres","PostreSQL")
                  if(!Postgres){
                    errMsg <- sprintf("Error during Geoserver '%s' datastore creation, the DBI software declared in the configuration is not a PostGis database", store)
-                   config$logger.error(errMsg)
+                   config$logger$ERROR(errMsg)
                    stop(errMsg)   
                  }
                  the_store<-GSPostGISDataStore$new(name=store, description = store_description, enabled = TRUE)
@@ -161,7 +170,7 @@ function(action, entity, config){
                    name=store, 
                    description = store_description,
                    enabled = TRUE,
-                   url = paste0("file:data","/",workspace)
+                   url = paste0("file:",store_basepath,"/",workspace)
                  )
                },
                #grid/coverages upload types
@@ -172,7 +181,7 @@ function(action, entity, config){
         )
         if(is.null(the_store)){
           errMsg <- sprintf("Error during Geoserver data/coverage store creation, format '%s' not supported. Aborting 'geosapi' action!",data_object$uploadType)
-          config$logger.error(errMsg)
+          config$logger$ERROR(errMsg)
           stop(errMsg)      
         }else{
           created <- switch(data_object$spatialRepresentationType,
@@ -181,17 +190,17 @@ function(action, entity, config){
           )
           if(created){
             infoMsg <- sprintf("Successful Geoserver '%s' data/coverage store creaction", store)
-            config$logger.info(infoMsg)
+            config$logger$INFO(infoMsg)
           }else{
             errMsg <- "Error during Geoserver data/coverage store creation. Aborting 'geosapi' action!"
-            config$logger.error(errMsg)
+            config$logger$ERROR(errMsg)
             stop(errMsg)
           }
         }
       }else{
         # If createStore is FALSE edit ERROR Message
         errMsg <- sprintf("Data/Coverage store '%s' does not exist and 'createStore' option = FALSE, please verify config if data/coverage store already exists or change createStore = TRUE to create it",store)
-        config$logger.error(errMsg)
+        config$logger$ERROR(errMsg)
         stop(errMsg)
       }    
     }
@@ -199,20 +208,20 @@ function(action, entity, config){
     #upload
     #-------------------------------------------------------------------------------------------------
     proceed_with_upload = data_object$upload
-    if(!is.null(layer) & !overwrite_upload) proceed_with_upload = FALSE
+    if(!overwrite_upload) proceed_with_upload = FALSE
     if(proceed_with_upload){
       
-      config$logger.info("Upload mode is set to true")
+      config$logger$INFO("Upload mode is set to true")
       if(startsWith(data_object$uploadType,"db") || data_object$uploadType == "other"){
         warnMsg <- "Skipping upload: Upload mode is only valid for types 'shp', 'spatialite' or 'h2'"
-        config$logger.warn(warnMsg)
+        config$logger$WARN(warnMsg)
       }else{
         uploaded <- FALSE
-        config$logger.info("Upload from local file(s)")
+        config$logger$INFO("Upload from local file(s)")
         filepath <- file.path(getwd(), "data", datasource)
-        config$logger.info(sprintf("File to upload to Geoserver: %s", filepath))
+        config$logger$INFO("File to upload to Geoserver: %s", filepath)
         if(file.exists(filepath)){
-          config$logger.info(sprintf("Upload file '%s' [%s] to GeoServer...", filepath, data_object$uploadType))
+          config$logger$INFO("Upload file '%s' [%s] to GeoServer...", filepath, data_object$uploadType)
           uploaded <- switch(data_object$spatialRepresentationType,
                              #vector/features upload
                              "vector" = switch(data_object$uploadType,
@@ -238,22 +247,22 @@ function(action, entity, config){
                              )
           )
         }else{
-          errMsg <- sprintf("Upload from local file(s): no zipped file found for source '%s' (%s)", filepath, datasource)
-          config$logger.error(errMsg)
+          errMsg <- sprintf("Upload from local file(s): no file found for source '%s' (%s)", filepath, datasource)
+          config$logger$ERROR(errMsg)
           stop(errMsg)
         }
         
         if(uploaded){
           infoMsg <- sprintf("Successful Geoserver upload for file '%s' (%s)", datasource_file, data_object$uploadType)
-          config$logger.info(infoMsg)
+          config$logger$INFO(infoMsg)
         }else{
           errMsg <- "Error during Geoserver file upload. Aborting 'geosapi' action!"
-          config$logger.error(errMsg)
+          config$logger$ERROR(errMsg)
           stop(errMsg)
         }
       }
     }else{
-      config$logger.info(sprintf("Data upload is skipped for layer '%s' (overwrite and/or overwrite_upload is set to FALSE)", layername))
+      config$logger$INFO("Data upload is skipped for layer '%s' (overwrite and/or overwrite_upload is set to FALSE)", layername)
     }
     
     #featuretype/coverage  +layer publication
@@ -278,9 +287,12 @@ function(action, entity, config){
       if(data_object$uploadType == "dbquery") nativename <- layername
       if(data_object$spatialRepresentationType == "grid") nativename <- store
       resource$setNativeName(nativename)
-      resource$setAbstract(entity$descriptions$abstract)
+      abstract <- entity$descriptions$abstract
+      if(!is.null(data_object$layerdesc)) abstract = data_object$layerdesc
+      resource$setAbstract(abstract)
       title <- entity$titles[["title"]]
       if(length(data_objects)>1) title <- paste0(title, " - ", layername)
+      if(!is.null(data_object$layertitle)) title = data_object$layertitle
       resource$setTitle(title)
       resource$setSrs(epsgCode)
       resource$setNativeCRS(epsgCode)
@@ -411,21 +423,32 @@ function(action, entity, config){
       )
       
       #styles publication if needed
-      gs_styles <- GS$getStyleNames()
+      gs_styles <- c(GS$getStyleNames(), GS$getStyleNames(ws = workspace))
       if(data_object$styleUpload) if(length(data_object$styles)>0){
+        reload_styles = FALSE
         for(i in 1:length(data_object$styles)){
           style <- data_object$styles[i]
           #check if any style SLD file is available in source
           style_sldfile <- paste0(style,".sld")
-          if(!style %in% gs_styles){
-            config$logger.warn(sprintf("No style '%s' in Geoserver", style))
-            if(style_sldfile %in% data_object$source){
-              config$logger.info(sprintf("Creating GeoServer style '%s' from SLD style file '%s' available as source", style, style_sldfile))
-              created <- GS$createStyle(file = file.path(getwd(), "data", style_sldfile), name = style)
+          style_sldfilepath = file.path(getwd(), "data", style_sldfile)
+          if(file.exists(style_sldfilepath)){
+            if(!style %in% gs_styles){
+              config$logger$WARN("No style '%s' in Geoserver", style)
+              config$logger$INFO("Creating GeoServer style '%s' from SLD style file '%s' available as data", style, style_sldfile)
+              created <- GS$createStyle(file = style_sldfilepath, name = style, ws = workspace)
+              if(created) reload_styles = TRUE
+            }else{
+              config$logger$WARN("Existing style '%s' in Geoserver", style)
+              config$logger$INFO("Updating GeoServer style '%s' from SLD style file '%s' available as data", style, style_sldfile)
+              updated <- GS$updateStyle(file = style_sldfilepath, name = style, ws = workspace)
+              if(updated) reload_styles = TRUE
             }
           }
         }
-        GS$reload()
+        if(reload_styles){
+          GS$reload()
+          gs_styles <- c(GS$getStyleNames(), GS$getStyleNames(ws = workspace)) 
+        }
       }
       
       #layer build and publication
@@ -436,9 +459,14 @@ function(action, entity, config){
                if(length(data_object$styles)>0){
                  for(i in 1:length(data_object$styles)){
                    style <- data_object$styles[[i]]
-                   if(i==1) layer$setDefaultStyle(style) else layer$addStyle(style)
+                   if(style %in% gs_styles){
+                    if(i==1) layer$setDefaultStyle(style) else layer$addStyle(style)
+                   }
                  }
                }else{
+                 if(entity$identifiers[["id"]] %in% gs_styles){
+                   layer$setDefaultStyle(entity$identifiers[["id"]])
+                 }
                  layer$setDefaultStyle("generic")
                }
                
@@ -447,9 +475,15 @@ function(action, entity, config){
                out <- GS$publishLayer(workspace, store, resource, layer)
                if(!out){
                  errMsg <- sprintf("Error during layer '%s' publication for entity '%s'!",layername, entity$identifiers[["id"]])
-                 config$logger.error(errMsg)
+                 config$logger$ERROR(errMsg)
                }else{
                  infoMsg <- sprintf("Successful layer'%s' publication in Geoserver for entity '%s'!", layername, entity$identifiers[["id"]])
+               }
+               
+               #if data is under restricted access, set an ACL rule to limit access to ROLE_AUTHENTICATED
+               if(out) if(entity$data$restricted) {
+                  acl_rule = GSLayerRule$new(ws = workspace, lyr = layername, permission = "r", roles = "ROLE_AUTHENTICATED")
+                  GS$addRule(acl_rule)
                }
              },
              "grid" = {
@@ -468,9 +502,14 @@ function(action, entity, config){
                    layer$styles <- list()
                    for(i in 1:length(data_object$styles)){
                      style <- data_object$styles[[i]]
-                     if(i==1) layer$setDefaultStyle(style) else layer$addStyle(style)
+                     if(style %in% gs_styles){
+                      if(i==1) layer$setDefaultStyle(style) else layer$addStyle(style)
+                     }
                    }
                  }else{
+                   if(entity$identifiers[["id"]] %in% gs_styles){
+                     layer$setDefaultStyle(entity$identifiers[["id"]])
+                   }
                    layer$setDefaultStyle("generic")
                  }
                  GS$updateLayer(layer)  
@@ -478,14 +517,20 @@ function(action, entity, config){
                
                if(!out){
                  errMsg <- sprintf("Error during layer '%s' publication for entity '%s'!",layername, entity$identifiers[["id"]])
-                 config$logger.error(errMsg)
+                 config$logger$ERROR(errMsg)
                }else{
                  infoMsg <- sprintf("Successful layer'%s' publication in Geoserver for entity '%s'!", layername, entity$identifiers[["id"]])
+               }
+               
+               #if data is under restricted access, set an ACL rule to limit access to ROLE_AUTHENTICATED
+               if(out) if(entity$data$restricted) {
+                 acl_rule = GSLayerRule$new(ws = workspace, lyr = layername, permission = "r", roles = "ROLE_AUTHENTICATED")
+                 GS$addRule(acl_rule)
                }
              }
       )
     }else{
-      config$logger.info(sprintf("Layer update is skipped for layer '%s' (overwrite and/or overwrite_layer is set to FALSE)", layername))
+      config$logger$INFO("Layer update is skipped for layer '%s' (overwrite and/or overwrite_layer is set to FALSE)", layername)
     }
   }
 }

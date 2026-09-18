@@ -8,8 +8,8 @@
 #' @title Geoflow feature type class
 #' @description This class models a feature type to be executed by geoflow
 #' @keywords contact
-#' @return Object of \code{\link{R6Class}} for modelling a dictionary feature type member
-#' @format \code{\link{R6Class}} object.
+#' @return Object of \code{\link[R6]{R6Class}} for modelling a dictionary feature type member
+#' @format \code{\link[R6]{R6Class}} object.
 #' 
 #' @author Emmanuel Blondel <emmanuel.blondel1@@gmail.com>
 #'
@@ -18,7 +18,7 @@ geoflow_featuremember <- R6Class("geoflow_featuremember",
      #'@field id feature member ID
      id = NULL,
      #'@field type feature member type
-     type = list(),
+     type = NULL,
      #'@field code feature member code
      code = NULL,
      #'@field name feature member name
@@ -35,6 +35,8 @@ geoflow_featuremember <- R6Class("geoflow_featuremember",
      uom = NULL,
      #'@field registerId feature member register ID
      registerId = NULL,
+     #'@field registerScript feature member register script
+     registerScript = NULL,
      
      #'@description Initializes a \link{geoflow_featuremember}
      #'@param type type
@@ -46,11 +48,12 @@ geoflow_featuremember <- R6Class("geoflow_featuremember",
      #'@param maxOccurs maxOccurs. Default is \code{NULL}
      #'@param uom unit of measure. Default is \code{NULL}
      #'@param registerId ID of the register associated to the feature type. Default is \code{NULL}
-     initialize = function(type, code, name, def, defSource = NULL,
+     #'@param registerScript source script providing the register functions. Default is \code{NULL}
+     initialize = function(type = "attribute", code = NULL, name = NULL, def = NULL, defSource = NULL,
                            minOccurs = NULL, maxOccurs = NULL, uom = NULL,
-                           registerId = NULL){
-       if(!type %in% c("attribute", "variable")){
-         stop("The member type should be either 'attribute' or 'variable'")
+                           registerId = NULL, registerScript = NULL){
+       if(!(type %in% c("attribute", "variable") | startsWith(type, "gml:"))){
+         stop("The member type should be either 'attribute' or 'variable' or be a GML geometry type")
        }
        self$id = code
        self$type = type
@@ -62,6 +65,25 @@ geoflow_featuremember <- R6Class("geoflow_featuremember",
        self$maxOccurs = maxOccurs
        self$uom = uom
        self$registerId = registerId
+       self$registerScript = registerScript
+     },
+     
+     #'@description Converts as data.frame
+     #'@return an object of class \link{data.frame}
+     asDataFrame = function(){
+       return(data.frame(
+         MemberCode = if(!is.null(self$code)) self$code else "",
+         MemberName = if(!is.null(self$name)) self$name else "",
+         MemberType = if(!is.null(self$type)) self$type else "",
+         MinOccurs = if(!is.null(self$minOccurs)) self$minOccurs else "",
+         MaxOccurs = if(!is.null(self$maxOccurs)) self$maxOccurs else "",
+         Definition = if(!is.null(self$def)) self$def else "",
+         DefinitionSource = if(!is.null(self$defSource)) self$defSource else "",
+         MeasurementUnit = if(!is.null(self$uom)) self$uom else "",
+         RegisterId = if(!is.null(self$registerId)) self$registerId else "",
+         RegisterScript = if(!is.null(self$registerScript)) self$registerScript else "",
+         stringsAsFactors = F
+       ))
      }
    )                                  
 )

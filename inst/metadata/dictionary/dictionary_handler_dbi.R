@@ -1,5 +1,5 @@
 #handle_dictionary_dbi
-handle_dictionary_dbi <- function(config, source, handle = TRUE){
+handle_dictionary_dbi <- function(handler, source, config, validate = TRUE, handle = TRUE){
   dbi <- config$software$input$dbi
   if(is.null(dbi)){
     stop("There is no database input software configured to handle dictionary from DB")
@@ -11,14 +11,14 @@ handle_dictionary_dbi <- function(config, source, handle = TRUE){
     source <- try(DBI::dbGetQuery(dbi, source))
     if(is(source,"try-error")){
       errMsg <- sprintf("Error while trying to execute DB query '%s'.", source)
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
   }else{
     source <- try(DBI::dbGetQuery(dbi, sprintf("select * from %s", source)))
     if(is(source,"try-error")){
       errMsg <- sprintf("Error while trying to read DB table/view '%s'. Check if it exists in DB.", source)
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
   }
@@ -26,6 +26,6 @@ handle_dictionary_dbi <- function(config, source, handle = TRUE){
   
   #apply generic handler
   handle_dictionary_df <- source(system.file("metadata/dictionary", "dictionary_handler_df.R", package = "geoflow"))$value
-  dictionary <- handle_dictionary_df(config, source)
+  dictionary <- handle_dictionary_df(handler, source, config, validate)
   return(dictionary)
 }

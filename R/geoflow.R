@@ -1,7 +1,6 @@
 #' @name geoflow
 #' @aliases geoflow-package
 #' @aliases geoflow
-#' @docType package
 #' 
 #' @import R6
 #' @import methods
@@ -14,6 +13,8 @@
 #' @importFrom utils head
 #' @importFrom utils tail
 #' @importFrom utils download.file
+#' @importFrom benchmarkme get_ram
+#' @importFrom benchmarkme get_cpu
 #' @importFrom zip zipr
 #' @importFrom png readPNG
 #' @importFrom curl curl_fetch_memory
@@ -21,13 +22,18 @@
 #' @import dotenv
 #' @import uuid
 #' @import httr
+#' @import mime
 #' @import jsonlite
+#' @import yaml
 #' @import XML
 #' @import xml2
 #' @import mime
-#' @import plyr
+#' @import rdflib
+#' @import dplyr
 #' @import readr
+#' @import arrow
 #' @import sf
+#' @import sfarrow
 #' @importFrom terra rast
 #' @import geometa
 #' @import geosapi
@@ -49,4 +55,4 @@
 #'  
 #'@author Emmanuel Blondel \email{emmanuel.blondel1@@gmail.com}
 #'
-NULL
+"_PACKAGE"

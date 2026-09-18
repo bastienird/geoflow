@@ -11,37 +11,10 @@
 #' @export
 #'
 register_dictionary_handlers <- function(){
-  handlers <- list(
-    geoflow_handler$new(
-      id = "csv",
-      def = "Handle dictionary from a CSV file",
-      fun = source(system.file("metadata/dictionary", "dictionary_handler_csv.R", package = "geoflow"))$value
-    ),
-    geoflow_handler$new(
-      id = "excel",
-      def = "Handle dictionary from a Microsoft Excel (xls,xlsx) file",
-      packages = list("readxl"),
-      fun = source(system.file("metadata/dictionary", "dictionary_handler_excel.R", package = "geoflow"))$value
-    ),
-    geoflow_handler$new(
-      id = "gsheet",
-      def = "Handle dictionary from a Google spreadsheet",
-      packages = list("gsheet"),
-      fun = source(system.file("metadata/dictionary", "dictionary_handler_gsheet.R", package = "geoflow"))$value
-    ),
-    geoflow_handler$new(
-      id = "dbi",
-      def = "Handle dictionary from a DB source",
-      packages = list("DBI", "RSQLite", "RPostgres"),
-      fun = source(system.file("metadata/dictionary", "dictionary_handler_dbi.R", package = "geoflow"))$value
-    ),
-    geoflow_handler$new(
-      id = "ocs",
-      def = "Handle dictionary from a tabulat data source (csv or excel) hosted on an OCS cloud",
-      packages = list("ocs4R"),
-      fun = source(system.file("metadata/dictionary", "dictionary_handler_ocs.R", package = "geoflow"))$value
-    )
-  )
+  yml_files = list.files(system.file("metadata/dictionary", package = "geoflow"), pattern = "yml")
+  handlers <- lapply(yml_files, function(file){
+    geoflow_handler$new(yaml = system.file("metadata/dictionary", file, package = "geoflow"))
+  })
   .geoflow$dictionary_handlers <- handlers
 }
 
@@ -71,6 +44,8 @@ list_dictionary_handlers <- function(raw = FALSE){
         id = handler$id,
         definition = handler$def,
         packages = paste(handler$packages, collapse=","),
+        status = handler$status,
+        notes = handler$notes,
         stringsAsFactors = FALSE
       ))
     }))
@@ -78,4 +53,85 @@ list_dictionary_handlers <- function(raw = FALSE){
   return(handlers)
 }
 
+#' @name list_dictionary_handler_options
+#' @aliases list_dictionary_handler_options
+#' @title list_dictionary_handler_options
+#' @description \code{list_dictionary_handler_options} lists the options available for a given dictionary handler supported by geoflow.
+#'
+#' @usage list_dictionary_handler_options(id, raw)
+#' 
+#' @param id An dictionary handler identifier
+#' @param raw if raw list should be returned
+#' 
+#' @return an object of class \code{data.frame} (or \code{list} if raw is TRUE) listing the available handler options.
+#' 
+#' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#' @export
+#'
+list_dictionary_handler_options <- function(id, raw = FALSE){
+  out <- NULL
+  handlers <- list_dictionary_handlers(raw = TRUE)
+  handler <- handlers[sapply(handlers, function(x){x$id == id})]
+  if(length(handler)==0) stop(sprintf("No handler with id '%s'!", id))
+  handler <- handler[[1]]
+  if(raw) return(handler$available_options)
+  if(length(handler$available_options)>0){
+    out <- data.frame(
+      name = names(handler$available_options),
+      definition = sapply(handler$available_options, function(x){x$def}),
+      default = sapply(handler$available_options, function(x){paste0(x$default, collapse=",")}),
+      stringsAsFactors = FALSE
+    )
+    row.names(out) <- 1:nrow(out)
+  }else{
+    out <- data.frame(name = character(0), definition = character(0))
+  }
+  return(out)
+}
 
+#' @name get_dictionary_handler
+#' @aliases get_dictionary_handler
+#' @title get_dictionary_handler
+#' @description \code{get_dictionary_handler} allows to get a dictionary handler
+#' 
+#' @usage get_dictionary_handler(id)
+#' 
+#' @param id A dictionary handler identifier
+#' @return an object of class \link{geoflow_handler}
+#' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#' @export
+#'
+get_dictionary_handler <- function(id){
+  handlers <- list_dictionary_handlers(raw = TRUE)
+  handler <- handlers[sapply(handlers, function(x){x$id == id})]
+  if(length(handler)==0) stop(sprintf("No handler with id '%s'!", id))
+  handler <- handler[[1]]
+  return(handler)
+}
+
+#' @name read_dictionary
+#' @aliases read_dictionary
+#' @title read_dictionary
+#' @description \code{read_dictionary} allows to read a dictionary
+#' 
+#' @usage read_dictionary(id, source, config)
+#' 
+#' @param id a dictionary handler identifier
+#' @param source source
+#' @param config a geoflow config (output of \link{initWorkflow}). Default is \code{NULL}
+#' @return an object of class \link{geoflow_dictionary}
+#' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#' @export
+#' 
+read_dictionary <- function(id, source, config = NULL){
+  handler <- get_dictionary_handler(id)
+  if(is.null(config)){
+    config = add_config_logger(list())
+  }
+  handler$fun(
+    handler = handler,
+    source = source,
+    config = config,
+    handle = TRUE
+  )
+}

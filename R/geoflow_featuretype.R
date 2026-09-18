@@ -8,8 +8,8 @@
 #' @title Geoflow feature type class
 #' @description This class models a feature type to be executed by geoflow
 #' @keywords contact
-#' @return Object of \code{\link{R6Class}} for modelling a dictionary feature type
-#' @format \code{\link{R6Class}} object.
+#' @return Object of \code{\link[R6]{R6Class}} for modelling a dictionary feature type
+#' @format \code{\link[R6]{R6Class}} object.
 #' 
 #' @author Emmanuel Blondel <emmanuel.blondel1@@gmail.com>
 #'
@@ -22,7 +22,7 @@ geoflow_featuretype <- R6Class("geoflow_featuretype",
     
     #'@description Initializes a \link{geoflow_featuretype}
     #'@param id id
-    initialize = function(id){
+    initialize = function(id = NULL){
       self$id = id
     },
 
@@ -53,6 +53,34 @@ geoflow_featuretype <- R6Class("geoflow_featuretype",
         if(length(members)>0) out <- members[[1]]
       }
       return(out)
+    },
+    
+    #'@description Converts to data frame
+    #'@return an object of class \link{data.frame}
+    asDataFrame = function(){
+      if(length(self$members)==0){
+        return(data.frame(
+          FeatureType = if(!is.null(self$id)) self$id else "",
+          MemberCode = "",
+          MemberName = "",
+          MemberType = "",
+          MinOccurs = "",
+          MaxOccurs = "",
+          Definition = "",
+          DefinitionSource = "",
+          MeasurementUnit = "",
+          RegisterId = "",
+          RegisterScript = "",
+          stringsAsFactors = F
+        ))
+      }else{
+        return(cbind(
+          FeatureType = if(!is.null(self$id)) self$id else "",
+          do.call("rbind", lapply(self$members, function(x){
+            x$asDataFrame()
+          }))
+        ))
+      }
     }
   )                                  
 )

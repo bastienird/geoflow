@@ -68,7 +68,7 @@ Examples cover both:
 | **Definition**               | Dataset summary description.                                 |
 | **Need**                     | Mandatory                                                    |
 | **Default key (if omitted)** | ``abstract`` (basic abstract of the dataset)                 |
-| **other keys available**     | ``purpose`` <br />``credit`` <br />``info`` <br />``edition``  <br />``statut``  |
+| **other keys available**     | ``purpose`` <br />``credit`` <br />``info`` <br />``edition``  <br />``status`` <br />``maintenance``  |
 | **Examples**                 |                                                              |
 | Simple usage                 | *This is my abstract* , equivalent to ``abstract:This is my abstract.`` |
 | Advanced usages              | Abstract extended with supplemental information and statut:  <br />`abstract:This is my abstract_` <br />`info:some more information about this dataset_`<br/>`statut:completed` |
@@ -81,8 +81,8 @@ Examples cover both:
 | **Need**                     | Recommended                                                  |
 | **Default key (if omitted)** | *Not applicable* : <br />Note: To add one subject, the key used will be the type of key word. The subjet name ca be added as bracket |
 | **Examples**                 |                                                              |
-| Simple usage                 | theme[general]:@() |
-| Advanced usages              | |
+| Simple usage                 | theme[general]:keyword1,keyword2 |
+| Advanced usages              | theme[general]@https://mythesaurus:environment@https://mythesaurus/environment,soil@https://mythesaurus/soil|
 |                              |  |
 
 #### Creator
@@ -178,7 +178,7 @@ Examples cover both:
 | **Definition**               | Description of the access and/or use constraints. Restriction code are map ISO 19115, the 2 constraints are related to code list . Control to term , use limitation can be use for any term of use (license, prefered citation, disclaimer). other constraint free text can be used |
 | **Need**                     |Optional               |
 | **Default key (if omitted)** |*Not applicable*|
-| **other keys available**     |``license``  <br /> ``use``  <br /> ``useLimitation``  <br /> ``useConstraint`` <br /> ``accessConstraint`` <br />  ``otherConstraint``|
+| **other keys available**     |``license``  <br /> ``use``  <br /> ``useLimitation``  <br /> ``termsOfuSe`` <br /> ``disclaimer`` <br /> ``citation`` <br />  ``useConstraint`` <br /> ``accessConstraint`` <br />  ``otherConstraint``|
 | **Examples**                 |               |
 | Simple usage                 |key:rule       |
 | Advanced usage               |`useLimitation:Free usage_` <br/> `accessConstraint:otherRestrictions_` <br/> `useConstraint:intellectualPropertyRights_` <br/> `otherConstraint:The supplier is unable to guarantee the accuracy, updating, integrity, completeness of the data`               |

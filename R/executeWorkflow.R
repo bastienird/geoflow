@@ -3,12 +3,14 @@
 #' @title executeWorkflow
 #' @description \code{executeWorkflow} allows to execute a workflow
 #'
-#' @usage executeWorkflow(file, dir, queue, 
+#' @usage executeWorkflow(file, dir, outdir, queue, 
 #'                        on_initWorkflowJob, on_initWorkflow, on_closeWorkflow, 
 #'                        monitor, session)
 #'                 
 #' @param file a JSON geoflow configuration file
-#' @param dir a directory where to execute the workflow
+#' @param dir a directory used to execute the workflow. This is the working directory, ie where local
+#' resources (data, metadata), should be located.
+#' @param outdir a directory where the geoflow will write the job outputs.
 #' @param queue an \pkg{ipc} queue to use geoflow in \pkg{geoflow-shiny}
 #' @param on_initWorkflowJob a function to trigger once \code{initWorkflowJob} is executed
 #' @param on_initWorkflow a function to trigger once \code{initWorkflow} is executed
@@ -20,7 +22,7 @@
 #' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
 #' @export
 #' 
-executeWorkflow <- function(file, dir = ".", 
+executeWorkflow <- function(file, dir, outdir = dir,
                             queue = NULL, 
                             on_initWorkflowJob = NULL,
                             on_initWorkflow = NULL,
@@ -40,6 +42,9 @@ executeWorkflow <- function(file, dir = ".",
   
   #1. Init the workflow based on configuration file
   wd <- getwd()
+  on.exit(setwd(wd))
+  dir = get_absolute_path(dir, base = dir)
+  outdir = get_absolute_path(outdir, base = dir)
   config <- list()
   jobDirPath <- initWorkflowJob(dir = dir)
   config$job <- jobDirPath
@@ -49,7 +54,7 @@ executeWorkflow <- function(file, dir = ".",
   
   capture.output({
     setwd(wd)
-    config <- try(initWorkflow(file = file, dir = dir, jobDirPath = jobDirPath, session = session))
+    config <- try(initWorkflow(file = file, dir = dir, outdir = outdir, jobDirPath = jobDirPath, session = session))
     if(is(config,"try-error")){
       stop(sprintf("Workflow failed during initialization, check logs at: %s", file.path(jobDirPath, "job-logs.txt")))
     }
@@ -64,13 +69,13 @@ executeWorkflow <- function(file, dir = ".",
   if(!is.null(monitor)){
     if(is.function(monitor)){
       if(all(names(formals(monitor))==c("step","config","entity","action","queue"))){
-        config$logger.info("use monitor function to trace processing steps")
+        config$logger$INFO("use monitor function to trace processing steps")
       }else{
-        config$logger.info("Monitor function escaped, parameter(s) missing or in wrong order")
+        config$logger$INFO("Monitor function escaped, parameter(s) missing or in wrong order")
         monitor=NULL
       }
     }else{
-      config$logger.info("Monitor escaped, monitor must be a function")
+      config$logger$INFO("Monitor escaped, monitor must be a function")
       monitor = NULL
     }
   }

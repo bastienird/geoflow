@@ -24,9 +24,9 @@ If sourced files are in local directory the complete path of file must be declar
 	* *`gpkg`* for GeoPackage object
 	* *`nc`* for NetCDF4 object
 	* *`other`* for other type of file
-* **sourceSql**: a plain SQL query to use as source 
-* **sourceZip**: a boolean argument whether if a zipped version of data file(s) should be created from source files. Default value is `FALSE`
-* **sourceZipOnly**:a boolean argument whether if a zipped version of data file(s) only should be created from source files. Default value is `FALSE`
+* **sourceSql**: a plain SQL query to use as source
+
+* **sourceFid**: name of the source attribute used as feature identifier (eg an ID, CODE). Can be needed for processing data source.
 
 <u>Access to storage and upload data</u>
 If data must be uploaded, the target must be declared in **software** section of the JSON configuration file.
@@ -67,7 +67,10 @@ If data must be uploaded, the target must be declared in **software** section of
 * **uploadStyle**: a specific boolean argument whether SLD style files (if listed/available in `source`) should be uploaded (specific to GeoServer publishing action).
 * **style**: Used as layer style name(s) for GeoServer action. When using multiple styles, the first one will be used as layer default style.
 * **store** : name of target store in the target GeoServer (can also be specified in json configuration)
-* **layername**: name given to layer. If omitted, the entity `id` identifier will be used.
+* **layername**: name given to layer. Optional. If omitted, the entity `id` identifier will be used.
+* **layertitle**: title given to layer. Optional. If omitted, the entity `title` will be used
+* **layerdesc**: description/abstract given to layer. Optional. If omitted, the entity `abstract` will be used
+* **layeruri**: URI given to layer. Optional. May be used to add additional URI to layer online resource in ISO 19115
 * **for a 'dbquery' upload type**
 	* **sql**: a sql query applicable on SQL source to upload.
 	* **parameters**: Set parameters definition for setting SQL view parameterized layers. It is compound by a name (alias) matching the one declared in the SQL query, a regular expression for validation of parameter values and a default value.These three arguments must be declared of the order described upper and separated by `,`. e.g. `parameter:high,^[\d]+$,100000`

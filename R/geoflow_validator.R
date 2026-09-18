@@ -112,7 +112,7 @@ geoflow_validator_cell <- R6Class("geoflow_validator_cell",
       #If cell is empty and can be empty it's okay, nothing to validate
       if(private$na_authorized){
         if(is.na(private$str)) return(report)
-        if(private$str == "") return(report)
+        if(as(private$str, "character") == "") return(report)
       }
       #If cell is empty and should't be empty return a error
       if(!private$na_authorized){
@@ -160,7 +160,7 @@ geoflow_validator_cell <- R6Class("geoflow_validator_cell",
                 if(private$key_required) report <- rbind(report, data.frame(type = "ERROR", message = sprintf("Key is omitted, with no default key, please check the documentation")))
               }
             }else{
-              if(!kvp$key %in% private$valid_keys){
+              if(!tolower(kvp$key) %in% tolower(private$valid_keys)){
                 #warning --> indicate key will be ignored
                 if(private$error_if_invalid_key){
                   report <- rbind(report, data.frame(type = "ERROR", message = sprintf("Key '%s' is invalid, allowed key values are [%s]", kvp$key, paste0(private$valid_keys, collapse = ","))))
@@ -258,7 +258,7 @@ geoflow_validator_contact_Identifier <- R6Class("geoflow_validator_contact_Ident
      #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
      #'@param str string to validate
      initialize = function(i, j, str){
-       valid_keys <- list("id", "orcid")
+       valid_keys <- list("id", "orcid", "ror", "digest")
        super$initialize(FALSE, TRUE, TRUE, valid_keys, "id", TRUE, TRUE, TRUE, i, j, str)
      },
      
@@ -373,7 +373,7 @@ geoflow_validator_entity_Description <- R6Class("geoflow_validator_entity_Descri
      #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
      #'@param str string to validate
      initialize = function(i, j, str){
-       valid_keys <- list("abstract", "purpose", "credit", "info", "edition", "status")
+       valid_keys <- list("abstract", "purpose", "credit", "info", "edition", "status", "maintenance")
        super$initialize(FALSE,TRUE, TRUE, valid_keys, "abstract",TRUE, TRUE, TRUE, i, j, str)
      }
    )
@@ -406,7 +406,13 @@ geoflow_validator_entity_Subject <- R6Class("geoflow_validator_entity_Subject",
       #Keyword topics are ISO keyword topics ?
        
        subjects <- if(!is.na(private$str)) extract_cell_components(private$str) else list()
+       
        if(length(subjects)>0){
+          if(any(sapply(subjects, endsWith, ":"))){
+            report <- rbind(report, data.frame(type = "WARNING", message = "Empty subject(s) detected, removing them!"))
+            subjects <- subjects[!sapply(subjects, endsWith, ":")]
+          }
+      
           topics<-sapply(subjects, function(subject){
              return(geoflow_subject$new(str = subject)$key)
           })
@@ -456,7 +462,7 @@ geoflow_validator_entity_Date <- R6Class("geoflow_validator_entity_Date",
      #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
      #'@param str string to validate
      initialize = function(i, j, str){
-       valid_keys <- list("creation","publication","edition")
+       valid_keys <- c(geometa::ISODateType$values(),"edition","embargo","metadata")
        super$initialize(TRUE,TRUE, TRUE, valid_keys, "creation",FALSE, TRUE, TRUE, i, j, as(str,"character"))
      },
      
@@ -512,7 +518,7 @@ geoflow_validator_entity_Type <- R6Class("geoflow_validator_entity_Type",
     #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
     #'@param str string to validate
     initialize = function(i, j, str){
-      valid_keys <- list()
+      valid_keys <- list("generic", "zenodoResourceType")
       super$initialize(FALSE,T, TRUE, valid_keys, "generic",T, TRUE, TRUE, i, j, str)
     }
   )
@@ -532,7 +538,7 @@ geoflow_validator_entity_Language <- R6Class("geoflow_validator_entity_Language"
     #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
     #'@param str string to validate
     initialize = function(i, j, str){
-      valid_keys <- list()
+      valid_keys <- geometa::ISOLanguage$values()
       super$initialize(TRUE,FALSE, FALSE, valid_keys, "eng",TRUE, TRUE, TRUE, i, j, str)
     },
     
@@ -667,16 +673,19 @@ geoflow_validator_entity_TemporalCoverage <- R6Class("geoflow_validator_entity_T
         if(is(tmp_cov, "character")) value <- unlist(strsplit(tmp_cov,"/"))
           if(length(value)==1){
             #check instant date
-            if(is(value, "character")){
-              value <- try(sanitize_date(value),silent=T)
-              if(!(is(value, "Date") | inherits(value, "POSIXt"))){
-                report <- rbind(report, data.frame(type = "ERROR", message = sprintf("instant date value '%s' is not a recognized date format", tmp_cov)))
+      
+            if(is(value, "character")) {
+              if(!is.na(value)){
+                value <- try(sanitize_date(value),silent=T)
+                if(!(is(value, "Date") | inherits(value, "POSIXt"))){
+                  report <- rbind(report, data.frame(type = "ERROR", message = sprintf("instant date value '%s' is not a recognized date format", tmp_cov)))
+                }
               }
             }
           }else if(length(value)==2){
             #check start date
             start<-value[1]
-            if(is(start, "character") && is.na(as(start,"numeric"))){
+            if(is(start, "character") && start != "NA" && is.na(suppressWarnings(as(start,"numeric")))){
                start<- try(sanitize_date(start),silent=T)
                if(!(is(start, "Date") | inherits(start, "POSIXt"))){
                  report <- rbind(report, data.frame(type = "ERROR", message = sprintf("start date value '%s' is not a recognized date format", value[1])))
@@ -684,15 +693,13 @@ geoflow_validator_entity_TemporalCoverage <- R6Class("geoflow_validator_entity_T
             }
             #check end date
             end<-value[2]
-            if(is(end, "character")  && is.na(as(end,"numeric"))){
+            if(is(end, "character") && end != "NA"  && is.na(suppressWarnings(as(end,"numeric")))){
               end <- try(sanitize_date(end),silent=T)
               if(!(is(end, "Date") | inherits(end, "POSIXt"))){
                 report <- rbind(report, data.frame(type = "ERROR", message = sprintf("end date value '%s' is not a recognized date format", value[2])))
               }
             }
             
-          }else{
-            report <- rbind(report, data.frame(type = "ERROR", message = sprintf("spatial extent '%' is not a recognized format",tmp_cov)))
           }
         }
        return(report)
@@ -738,6 +745,7 @@ geoflow_validator_entity_Relation <- R6Class("geoflow_validator_entity_Relation"
         valid_keys <- list(
           "ftp", "http", "download",
           "parent","thumbnail",
+          "ref", "grant",
           "csw", "csw202", "csw30",
           "wcs", "wcs100", "wcs11", "wcs110", "wcs111", "wcs201",
           "wfs", "wfs100", "wfs110", "wfs200",
@@ -762,7 +770,7 @@ geoflow_validator_entity_Rights <- R6Class("geoflow_validator_entity_Rights",
       #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
       #'@param str string to validate
       initialize = function(i, j, str){
-        valid_keys <- list("license","use","useLimitation", "useConstraint", "accessConstraint", "otherConstraint")
+        valid_keys <- list("license","use","useLimitation", "termsOfUse", "disclaimer", "citation", "useConstraint", "accessConstraint", "otherConstraint", "accessRight", "accessConditions")
         super$initialize(TRUE,TRUE, TRUE, valid_keys, NULL,TRUE, FALSE, TRUE, i, j, str)
       }
     )
@@ -835,10 +843,116 @@ geoflow_validator_entity_Data <- R6Class("geoflow_validator_entity_Data",
     #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
     #'@param str string to validate
     initialize = function(i, j, str){
-      valid_keys <- list()
+      valid_keys <- list(
+        "access", "dir", "source", "sourceFid", "sourceSql", "sourceType",
+        "upload", "uploadSource", "uploadType", "sql", "cqlfilter", 
+        "workspace", "store",
+        "layername", "layertitle", "layerdesc", "layeruri", "style", "styleUpload",
+        "featureType", "attribute", "variable",
+        "parameter", "geometry", "band",
+        "cloud_path"
+      )
       super$initialize(TRUE,TRUE, TRUE, valid_keys, NULL,FALSE, FALSE, TRUE, i, j, str)
+    },
+    
+    #'@description Validates a Data Proceeds with syntactic validation and content validation.
+    #'@return an validation report, as object of class \code{data.frame}  
+    validate = function(){
+      report <- super$validate()
+      if(is.na(private$str)) return(report)
+  
+      data_props <- extract_cell_components(sanitize_str(private$str))
+      data_props <- lapply(data_props, function(data_prop){
+        return(extract_kvp(data_prop))
+      })
+      names(data_props) <- sapply(data_props, function(x){x$key})
+      
+      #access
+      if(!is.null(data_props$access)){
+        access <- data_props$access$values[[1]]
+        if(!access %in% list_data_accessors()$id){
+          report <- rbind(report, data.frame(type = "ERROR", message = sprintf("Value '%s' does not match any valid data accessor id. 
+                         See valid values with geoflow::list_data_accessors()", access)))
+        }
+      }
+      
+      #source
+      if(!data_props$sourceType$values[[1]] %in% c("dbtable", "dbquery", "dbview")){
+        if(!any(sapply(data_props, function(x){x$key=="source"})) && !any(sapply(data_props, function(x){x$key=="dir"}))){
+          report <- rbind(report, data.frame(type = "ERROR", message = "One or more data 'source' (or 'dir', as directory for sources) is mandatory"))
+        }
+      }
+      
+      #parameters
+      params <- data_props[sapply(data_props, function(x){x$key=="parameter"})]
+      if(length(params)>0){
+        for(param in params){
+          if(!length(param$values) %in% c(2,3)){
+            report <- rbind(report, data.frame(type = "ERROR", message = sprintf("Parameter '%s' definition should be compound by 3 elements: fieldname, regexp and default value", param$values[[1]])))
+          }
+        }
+        #check compliance of dbquery
+        if(!is.null(data_props$sql)){
+          sqlquery <- data_props$sql
+          #with fieldnames
+          if(!all(sapply(params, function(x){regexpr(x$values[[1]],sqlquery)>0}))){
+            report <- rbind(report, data.frame(type = "WARNING", message = "At least one parameter fieldname declared is not used in the data source query!"))
+          }
+          #with param aliases
+          if(!all(sapply(params, function(x){
+            fieldname = x$values[[1]]
+            param_alias <- attr(fieldname, "description")
+            attr(fieldname, "description") <- NULL
+            if(is.null(param_alias)) param_alias <- fieldname
+            regexpr(paste0("%",param_alias,"%"),sqlquery)>0
+            }))){
+            report <- rbind(report, data.frame(type = "WARNING", message = "At least one parameter name declared is not used in the data source query!"))
+          }
+        }else{
+          report <- rbind(report, data.frame(type = "WARNING", message = "At least one parameter is defined with no SQL query defined"))
+        }
+      }
+      
+      #bands
+      bands <- data_props[sapply(data_props, function(x){x$key=="band"})]
+      if(length(bands)>0){
+        if(data_props$spatialRepresentationType$values[[1]] != "grid"){
+          report <- rbind(report, data.frame(type = "WARNING", message = "The specification of bands is only possible for a grid spatial representation!"))
+        }
+        if(data_props$uploadType$values[[1]] != "geotiff"){ #TODO to extend to other coverage formats
+          report <- rbind(report, data.frame(type = "WARNING", message = "The specification of bands is only possible for a 'geotiff' upload type"))
+        }
+        #check and set parameter
+        for(band in bands){
+          covname <- band$values[[1]]
+          if(length(band$values) != 2){
+            report <- rbind(report, data.frame(type = "WARNING", message = sprintf("Band '%s' definition should be compound by 2 elements: name (coverage name), index", covname)))
+          }
+          index <- band$values[[2]]
+        }
+      }
+      return(report)
     }
   )
+)
+
+#' geoflow_validator_dictionary_RegisterScript
+#'
+#' @docType class
+#' @importFrom R6 R6Class
+#' @export
+geoflow_validator_dictionary_RegisterScript <- R6Class("geoflow_validator_dictionary_RegisterScript",
+   inherit = geoflow_validator_cell,
+   public = list(
+     
+     #'@description Initializes an dictionary 'RegisterScript' cell
+     #'@param i row index (internal index to be used for graphical \pkg{geoflow} validation handlers)
+     #'@param j col index (internal index to be used for graphical \pkg{geoflow} validation handlers)
+     #'@param str string to validate
+     initialize = function(i, j, str){
+       super$initialize(TRUE,TRUE, TRUE, c(), NULL,FALSE, FALSE, TRUE, i, j, str)
+     }
+    )
 )
 
 #' geoflow_validator
@@ -856,7 +970,7 @@ geoflow_validator <- R6Class("geoflow_validator",
      source = NULL,
      
      #'@description Initializes a table validator for a given metadata model
-     #'@param model the data model name, eg. "entity", "contact"
+     #'@param model the data model name, eg. "entity", "contact" or "dictionary"
      #'@param valid_columns a vector of valid columns for the data model
      #'@param source an object of class \code{data.frame} handling the contacts
      initialize = function(model, valid_columns, source){
@@ -892,6 +1006,7 @@ geoflow_validator <- R6Class("geoflow_validator",
      
      #'@description Validates a source table using syntactic and content validation rules
      #'@param raw indicates whether to return a \code{list} of \code{geoflow_validator_cell} objects or a \code{data.frame}
+     #'@param debug debug validation
      #'@return a \code{list} of \code{geoflow_validator_cell} objects, or \code{data.frame} 
      validate_content = function(raw = FALSE){
        content_validation_report <- NULL
@@ -905,7 +1020,12 @@ geoflow_validator <- R6Class("geoflow_validator",
            if(is.R6Class(col_validator_class)){
              out_col <- col_validator_class$new(i, which(colnames(src_obj)==colname), src_obj[,colname])
              if(!raw){
-               out_col <- out_col$validate()
+          
+               out_col <- try(out_col$validate(), silent = T)
+               if(is(out_col,"try-error")){
+                 stop(sprintf("Unexpected validation error for row %s column %s ('%s'), value '%s':\n%s", 
+                              i, which(colnames(src_obj)==colname), colname, src_obj[,colname], out_col[1]))
+               }
                out_col <- cbind(col = rep(colname,nrow(out_col)), out_col)
              }
            }
@@ -964,4 +1084,24 @@ geoflow_validator_entities <- R6Class("geoflow_validator_entities",
       super$initialize(model = "entity", valid_columns = valid_columns, source = source)
     }
   )
+)
+
+#' geoflow_validator_dictionary
+#'
+#' @docType class
+#' @importFrom R6 R6Class
+#' @export
+geoflow_validator_dictionary <- R6Class("geoflow_validator_dictionary",
+    inherit = geoflow_validator,
+    public = list(
+      
+      #'@description Initializes an entities table validator
+      #'@param source an object of class \code{data.frame} handling a dictionary
+      initialize = function(source){
+        valid_columns <- c("FeatureType","MemberCode","MemberName","MemberType",
+                           "MinOccurs","MaxOccurs","Definition","DefinitionSource",
+                           "MeasurementUnit","RegisterId","RegisterScript")
+        super$initialize(model = "dictionary", valid_columns = valid_columns, source = source)
+      }
+    )
 )

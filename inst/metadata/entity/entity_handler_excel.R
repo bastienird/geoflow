@@ -1,5 +1,5 @@
 #handle_entities_excel
-handle_entities_excel <- function(config, source, handle = TRUE){
+handle_entities_excel <- function(handler, source, config, validate = TRUE, handle = TRUE){
   
   isSourceUrl <- regexpr("(http|https)[^([:blank:]|\\\"|<|&|#\n\r)]+", source) > 0
   if(isSourceUrl){
@@ -15,7 +15,8 @@ handle_entities_excel <- function(config, source, handle = TRUE){
   if(!handle) return(source)
   
   #apply generic handler
-  handle_entities_df <- source(system.file("metadata/entity", "entity_handler_df.R", package = "geoflow"))$value
-  entities <- handle_entities_df(config, source)
+  handler_script = if(handler$getOption("enrich_from_dbi")) "entity_handler_dbi_df.R" else "entity_handler_df.R"
+  handle_entities_df <- source(system.file("metadata/entity", handler_script, package = "geoflow"))$value
+  entities <- handle_entities_df(handler, source, config, validate)
   return(entities)
 }

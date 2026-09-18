@@ -1,26 +1,21 @@
 #handle_dictionary_df
-handle_dictionary_df <- function(config, source){
+handle_dictionary_df <- function(handler, source, config, validate = TRUE){
   
   source [source == ""] <- NA
   
   if(!is(source, "data.frame")){
     errMsg <- "Error in 'handle_dictionary_df': source parameter should be an object of class 'data.frame'"
-    config$logger.error(errMsg)
+    config$logger$ERROR(errMsg)
     stop(errMsg)
   }
   
   dict <- geoflow::geoflow_dictionary$new()
   dict$setSource(source)
-  config$logger.info(sprintf("Parsing %s dictionary elements from tabular source", nrow(source)))
-  if(!"FeatureType" %in% colnames(source)){
-    errMsg <- "Error in 'handle_dictionary_df': missing 'featuretype' column"
-    config$logger.error(errMsg)
-    stop(errMsg)
-  }
+  config$logger$INFO("Parsing %s dictionary elements from tabular source", nrow(source))
   
   #feature types
   fts <- unique(source$FeatureType)
-  config$logger.info(sprintf("Loading %s feature types from data dictionnary...",length(fts)))
+  config$logger$INFO("Loading %s feature types from data dictionnary...",length(fts))
   for(ft in fts){
     ft_df <- source[source$FeatureType == ft, ]
     featuretype <- geoflow::geoflow_featuretype$new(id = ft)
@@ -62,7 +57,8 @@ handle_dictionary_df <- function(config, source){
         name = memberName, #i18n support
         def = memberDef, #i18n support
         defSource = defSource,
-        registerId = ftm$RegisterId
+        registerId = ftm$RegisterId,
+        registerScript = ftm$RegisterScript
       )
       if(!is.null(ftm$MinOccurs)) member$minOccurs <- ftm$MinOccurs
       if(!is.null(ftm$MaxOccurs)) member$maxOccurs <- ftm$MaxOccurs
@@ -76,44 +72,64 @@ handle_dictionary_df <- function(config, source){
   }
   
   #registers
-  config$logger.info("Loading register scripts from data dictionnary...")
+  config$logger$INFO("Loading register scripts from data dictionnary...")
   scripts <- unique(source$RegisterScript)
   scripts <- scripts[!is.na(scripts)]
   
   invisible(lapply(as.character(scripts), function(script){
     isSourceUrl <- regexpr('(http|https)[^([:blank:]|\\\'|<|&|#\n\r)]+', script) > 0
     if(!isSourceUrl){
-      if(!is_absolute_path(script)){
-        script<-file.path(config$session_wd,script)
+      print(handler)
+      print(handler$id)
+      if(handler$id == "ocs"){
+        #get ocs client from config
+        ocs_data_accessor = geoflow::get_data_accessor(id = handler$id)
+        ocs_client <- config$software$input$ocs
+        if(!is.null(ocs_client)){
+          script_tempfile = file.path(tempdir(), basename(script))
+          ocs_data_accessor$download(resource = script, file = basename(script), path = script_tempfile, software = ocs_client)
+          script = script_tempfile
+        }else{
+          script = NULL
+        }
+        
+      }else{
+        if(!geoflow::is_absolute_path(script)){
+          script <- geoflow::get_absolute_path(script, base = config$wd)
+        }
       }
     }
-    source(script)
+    if(!is.null(script)) try(source(script), silent = TRUE)
   }))
   
-  config$logger.info("Fetching registers from data dictionnary...")
+  config$logger$INFO("Fetching registers from data dictionnary...")
   handlers <- unique(source$RegisterId)
   handlers <- handlers[!is.na(handlers)]
-  for(handler in handlers){
-    
-    fun <- eval(parse(text = handler))
+  for(hdlr in handlers){
+    fun_ok = TRUE
+    fun <- try(eval(parse(text = hdlr)), silent = TRUE)
     if(is(fun,"try-error")){
-      errMsg <- sprintf("Error while trying to evaluate function '%s", handler)
-      config$logger.error(errMsg)
-      stop(errMsg)
+      errMsg <- sprintf("Error while trying to evaluate function '%s", hdlr)
+      config$logger$ERROR(errMsg)
+      fun_ok = FALSE
     }
     if(!is(fun,"function")){
-      errMsg <- sprintf("'%s' is not a function!", handler)
-      config$logger.error(errMsg)
-      stop(errMsg)
+      errMsg <- sprintf("'%s' is not a function!", hdlr)
+      config$logger$ERROR(errMsg)
+      fun_ok = FALSE
     }
-    register_to_fetch <- geoflow::geoflow_register$new(
-      id = handler, 
-      def = "", 
-      fun = fun
-    )
-    config$logger.info(sprintf("Fetching data for register '%s'...", handler))
-    register_to_fetch$fetch(config)
-    dict$addRegister(register_to_fetch)
+    if(fun_ok){
+      register_to_fetch <- geoflow::geoflow_register$new(
+        id = hdlr, 
+        def = "", 
+        fun = fun
+      )
+      config$logger$INFO("Fetching data for register '%s'...", hdlr)
+      register_to_fetch$fetch(config)
+      dict$addRegister(register_to_fetch)
+    }else{
+      config$logger$ERROR("Fetching data for register '%s' aborted!", hdlr)
+    }
   }
   
   return(dict)

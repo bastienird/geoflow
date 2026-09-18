@@ -8,8 +8,8 @@
 #' @title Geoflow data accessor class
 #' @description This class models a data accessor to be used by geoflow
 #' @keywords data access accessor
-#' @return Object of \code{\link{R6Class}} for modelling a data accessor
-#' @format \code{\link{R6Class}} object.
+#' @return Object of \code{\link[R6]{R6Class}} for modelling a data accessor
+#' @format \code{\link[R6]{R6Class}} object.
 #' 
 #' @examples
 #' \dontrun{
@@ -18,7 +18,7 @@
 #'    software_type = "some-software",
 #'    definition = "definition",
 #'    packages = list(),
-#'    download = function(resource, file, path, software){},
+#'    download = function(resource, file, path, software, unzip){},
 #'    list = function(resource, software){}
 #'  )
 #' }
@@ -82,7 +82,8 @@ geoflow_data_accessor <- R6Class("geoflow_data_accessor",
       self$definition <- definition
     },
     
-    #'@description Set download handler (a function with arguments \code{resource}, \code{file}, \code{path} and optional \code{software})
+    #'@description Set download handler (a function with arguments \code{resource},
+    #' \code{file}, \code{path}, \code{unzip} (TRUE/FALSE) and optional \code{software})
     #'@param download an object of class \code{function}
     setDownload = function(download){
       self$download = download
@@ -99,7 +100,7 @@ geoflow_data_accessor <- R6Class("geoflow_data_accessor",
     #'    packages names and version. If one or more packages are unavailable,
     #'    an error is thrown and user informed of the missing packages.
     checkPackages = function(){
-      self$INFO(sprintf("Check package dependencies for data accessor '%s'", self$id))
+      self$INFO("Check package dependencies for data accessor '%s'", self$id)
       out_pkgs <- try(check_packages(self$packages))
       if(is(out_pkgs,"try-error")){
         errMsg <- sprintf("One or more packages are not imported although required for data accessor '%s'", self$id)
@@ -107,9 +108,9 @@ geoflow_data_accessor <- R6Class("geoflow_data_accessor",
         stop(errMsg)
       }else{
         if(is.null(out_pkgs)){
-          self$INFO(sprintf("No additional package required for data accessor '%s':", self$id))
+          self$INFO("No additional package required for data accessor '%s':", self$id)
         }else{
-          self$INFO(sprintf("The following packages have been imported for data accessor '%s':", self$id))
+          self$INFO("The following packages have been imported for data accessor '%s':", self$id)
           print(out_pkgs)
         }
       }
@@ -139,10 +140,10 @@ register_data_accessors <- function(){
     geoflow_data_accessor$new(
       id = "default",
       definition = "A default HTTP(S) data accessor",
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         cat(sprintf("[geoflow][INFO] Default HTTP(S) data accessor: Download data '%s' from '%s' to '%s'\n", file, resource, path))
         download.file(resource, destfile = path, mode = "wb")
-        if(endsWith(path, "zip")){
+        if(unzip & endsWith(path, "zip")){
           utils::unzip(zipfile = path, exdir = getwd(), unzip = getOption("unzip"))
         }
       }
@@ -155,7 +156,7 @@ register_data_accessors <- function(){
       software_type = "googledrive",
       definition = "A Google Drive data accessor",
       packages = list("googledrive"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] Google Drive data accessor requires a 'googledrive' software declaration in the geoflow configuration\n")
           cat(errMsg)
@@ -169,7 +170,7 @@ register_data_accessors <- function(){
         }else{
           cat(sprintf("No Google Drive resource ID for resource/file '%s'\n", resource))
         }
-        if(endsWith(path, "zip")){
+        if(unzip & endsWith(path, "zip")){
           utils::unzip(zipfile = path, exdir = getwd(), unzip = getOption("unzip"))
         }
       }
@@ -179,15 +180,15 @@ register_data_accessors <- function(){
     #------------------------------------------------------------------------------------------------------- 
     geoflow_data_accessor$new(
       id = "zenodo",
-      software_type = NA,
+      software_type = "zenodo",
       definition = "A Zenodo public data accessor",
       packages = list("zen4R"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(startsWith(resource, "https://dx.doi.org/")) resource <- unlist(strsplit(resource, "https://dx.doi.org/"))[2]
         cat(sprintf("[geoflow] Zenodo data accessor: Download data '%s' from '%s' to '%s'\n", file, resource, path))
-        zen4R::download_zenodo(doi = resource, files = file, path = dirname(path))
+        zen4R::download_zenodo(doi = resource, files = file, path = dirname(path), sandbox = if(!is.null(software)) software$sandbox else FALSE)
         file.rename(from = file.path(getwd(), file), to = path)
-        if(endsWith(path, "zip")){
+        if(unzip & endsWith(path, "zip")){
           utils::unzip(zipfile = path, exdir = getwd(), unzip = getOption("unzip"))
         }
       }
@@ -200,7 +201,7 @@ register_data_accessors <- function(){
       software_type = "dataverse",
       definition = "A Dataverse public data accessor",
       packages = list("dataverse"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] Dataverse data accessor requires a 'dataverse' software declaration in the geoflow configuration\n")
           cat(errMsg)
@@ -220,7 +221,7 @@ register_data_accessors <- function(){
       software_type = "d4storagehub",
       definition = "A D4science Storage Hub data accessor",
       packages = list("d4storagehub4R"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] D4science Storage Hub data accessor requires a 'd4storagehub' software declaration in the geoflow configuration\n")
           cat(errMsg)
@@ -238,7 +239,7 @@ register_data_accessors <- function(){
           stop(errMsg)
         }
         
-        if(endsWith(path, "zip")){
+        if(unzip & endsWith(path, "zip")){
           utils::unzip(zipfile = path, exdir = getwd(), unzip = getOption("unzip"))
         }
       }
@@ -251,7 +252,7 @@ register_data_accessors <- function(){
       software_type = "gbif",
       definition = "A gbif public data accessor",
       packages = list("rgbif"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
 
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] Gbif data accessor requires a 'gbif' software declaration in the geoflow configuration\n")
@@ -283,7 +284,7 @@ register_data_accessors <- function(){
       software_type = "thredds",
       definition = "A Thredds data server accessor",
       packages = list("thredds","httr","XML"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] Thredds data accessor requires a 'thredds' software declaration in the geoflow configuration\n")
           cat(errMsg)
@@ -332,7 +333,7 @@ register_data_accessors <- function(){
       software_type = "openapi",
       definition = "An OpenAPI data accessor",
       packages = list("rapiclient"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] OpenAPI data accessor requires a 'openapi' software declaration in the geoflow configuration\n")
@@ -376,15 +377,15 @@ register_data_accessors <- function(){
       software_type = "ocs",
       definition = "An OCS API-based (Owncloud/Nextcloud) data accessor",
       packages = list("ocs4R"),
-      download = function(resource, file, path, software = NULL){
+      download = function(resource, file, path, software = NULL, unzip = TRUE){
         if(is.null(software)){
           errMsg <- sprintf("[geoflow] OCS data accessor requires a 'ocs' software declaration in the geoflow configuration\n")
           cat(errMsg)
           stop(errMsg)
         }
         cat(sprintf("[geoflow] OCS data accessor: Download data '%s' from '%s' to '%s'\n", file, resource, path))
-        software$downloadFile(relPath = dirname(resource), filename = basename(resource), outdir = getwd())
-        if(endsWith(path, "zip")){
+        software$downloadFile(relPath = dirname(resource), filename = basename(resource), outdir = dirname(path))
+        if(unzip & endsWith(path, "zip")){
           utils::unzip(zipfile = path, exdir = getwd(), unzip = getOption("unzip"))
         }
       },
@@ -445,5 +446,27 @@ list_data_accessors <- function(raw = FALSE){
     }))
   }
   return(data_accessors)
+}
+
+#' @name get_data_accessor
+#' @aliases get_data_accessor
+#' @title get_data_accessor
+#' @description \code{get_data_accessor} get a data accessor by ID.
+#'
+#' @usage get_data_accessor(id)
+#' 
+#' @param id an accessor ID
+#' 
+#' @return an object of class \link{geoflow_data_accessor}, or \code{NULL}
+#' 
+#' @author Emmanuel Blondel, \email{emmanuel.blondel1@@gmail.com}
+#' @export
+#'
+get_data_accessor <- function(id){
+  selected_accessor = NULL
+  default_accessors = list_data_accessors(raw = TRUE)
+  accessor = default_accessors[sapply(default_accessors, function(x){x$id == id})]
+  if(length(accessor)>0) selected_accessor = accessor[[1]]
+  return(selected_accessor)
 }
 

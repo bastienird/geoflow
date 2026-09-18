@@ -1,6 +1,11 @@
+^renv$
+^renv\.lock$
 ^.*\.Rproj$
 ^\.Rproj\.user$
 .github
+.REnviron
+.RData
+.Rhistory
 ^CODE_OF_CONDUCT\.md$
 ^CONTRIBUTING\.md$
 doc

@@ -1,0 +1,85 @@
+## [geoflow 1.4.0.9001](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-unavailable-red.svg)](https://github.com/r-geoflow/geoflow)
+
+**Enhancements**
+
+* [#455](https://github.com/r-geoflow/geoflow/455) Add validate argument (TRUE default) to all metadata handlers
+* [#456](https://github.com/r-geoflow/geoflow/456) Implement validator for entities/Data column
+* [#457](https://github.com/r-geoflow/geoflow/457) Implement base validator for dictionary
+
+## [geoflow 1.4.0](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://github.com/r-geoflow/geoflow)
+
+**Enhancements**
+
+* [#381](https://github.com/r-geoflow/geoflow/issues/381) Enhance cell components extraction to manage Windows-style line endings (CRLF, i.e. \r\n)
+* [#448](https://github.com/r-geoflow/geoflow/issues/448) Add 'outdir' argument for init / executeWorkflow & rely strictly on 'dir' arg as working environment to fetch resources
+
+**Bug fixes**
+
+* [#453](https://github.com/r-geoflow/geoflow/issues/453) Error while trying to publish in geonetwork with no data associated
+
+## [geoflow 1.3.0](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://github.com/r-geoflow/geoflow)
+
+**Bug fixes**
+
+* [#443](https://github.com/r-geoflow/geoflow/issues/443) Missing sourceSql export in entity$asDataFrame
+* [#444](https://github.com/r-geoflow/geoflow/issues/444) Data dir is ignored with entity$asDataFrame
+* [#447](https://github.com/r-geoflow/geoflow/issues/447) Missing entity data spatialRepresentationType export as data frame
+
+**New features**
+
+* [#445](https://github.com/r-geoflow/geoflow/issues/445) Support specific software configuration for environment file remote fetching
+* [#446](https://github.com/r-geoflow/geoflow/issues/446) Support remote OCS fetching of dictionary register scripts
+
+## [geoflow 1.2.1](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://github.com/r-geoflow/geoflow)
+
+**Bug fixes**
+
+* [#436](https://github.com/r-geoflow/geoflow/issues/436) initWorkflow doesn't work for YAML configuration file : incorrect mime type
+* [#437](https://github.com/r-geoflow/geoflow/issues/437) Metadata privileges not assigned to 'all' when no restriction
+* [#439](https://github.com/r-geoflow/geoflow/issues/439) Priv configuration setting broken for ISO 19110 (wrong md identifier)
+* [#440](https://github.com/r-geoflow/geoflow/issues/440) Metadata thumbnail publication fails if description includes special characters
+* [#442](https://github.com/r-geoflow/geoflow/issues/442) Entity toDataFrame fails with Null provenance
+
+**New features**
+
+* [#438](https://github.com/r-geoflow/geoflow/issues/438) Add user functions to get metadata handlers and read metadata (contacts, entities, dictionary)
+* [#441](https://github.com/r-geoflow/geoflow/issues/441) CSV spatialization - Report on empty/invalid geometries and removing them from data
+
+## [geoflow 1.2.0](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://github.com/r-geoflow/geoflow)
+
+**New features**
+
+* [#434](https://github.com/r-geoflow/geoflow/issues/434) Support publication of restricted OGC data layers
+
+**Enhancements**
+
+* [#435](https://github.com/r-geoflow/geoflow/issues/435) Add vocabulary connection status - Online vocabulary resources should fail gracefully
+
+## [geoflow 1.1.0](https://github.com/r-geoflow/geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://github.com/r-geoflow/geoflow)
+
+**Bug fixes**
+
+* [#418](https://github.com/r-geoflow/geoflow/issues/418) `prepareFeaturesToUpload` for GeoPackage miss default zipping
+* [#419](https://github.com/r-geoflow/geoflow/issues/419) `prepareFeaturesToUpload GeoPackage export - no geometry colum name integrity
+* [#420](https://github.com/r-geoflow/geoflow/issues/420) `unload_workflow_environment` broken since 1.0.0
+* [#422](https://github.com/r-geoflow/geoflow/issues/422) Control on dir too restrictive to detect geoflow data children
+* [#430](https://github.com/r-geoflow/geoflow/issues/430) Function unload_workflow_environment fails if no env was provided
+* [#431](https://github.com/r-geoflow/geoflow/issues/431) Action ISO 19115 fails with free text license instead of license Id
+
+**Enhancements**
+
+* [#423](https://github.com/r-geoflow/geoflow/issues/423) Capacity to update relations auto-set by geoflow with `enrichWithRelations`
+* [#424](https://github.com/r-geoflow/geoflow/issues/424) INSPIRE metadata validator does not need API key anymore
+* [#427](https://github.com/r-geoflow/geoflow/issues/427) Define additional 'wfs' / 'wcs' source type values
+* [#429](https://github.com/r-geoflow/geoflow/issues/429) CSW metadata handler improvements
+
+**New features**
+
+* [#393](https://github.com/r-geoflow/geoflow/issues/393) Add option to geosapi action to define store base datadir
+* [#417](https://github.com/r-geoflow/geoflow/issues/417) Support surface computation global option
+* [#425](https://github.com/r-geoflow/geoflow/issues/425) Support new Data sourceFid
+* [#426](https://github.com/r-geoflow/geoflow/issues/426) Enable Entity data validator
+
+## [geoflow 1.0.0](https://cran.r-project.org/package=geoflow) | [![CRAN_Status_Badge](https://img.shields.io/badge/CRAN-published-blue.svg)](https://cran.r-project.org/package=geoflow)
+
+Check the full history on Github

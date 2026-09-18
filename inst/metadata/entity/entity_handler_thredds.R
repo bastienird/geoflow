@@ -1,11 +1,14 @@
 #handle_entities_thredds
-handle_entities_thredds <- function(config, source){
+handle_entities_thredds <- function(handler, source, config, validate = TRUE){
   
   if(!requireNamespace("thredds", quietly = TRUE)){
     stop("The Thredds handler requires the 'thredds' package")
   }
   if(!requireNamespace("ncdf4", quietly = TRUE)){
-    stop("The NCDF handler requires the 'ncdf4' package")
+    stop("The Thredds handler requires the 'ncdf4' package")
+  }
+  if(!requireNamespace("XML", quietly = TRUE)){
+    stop("The Thredds handler requires the 'XML' package")
   }
   
   thredds <- config$software$input$thredds
@@ -15,7 +18,7 @@ handle_entities_thredds <- function(config, source){
   
   if(length(thredds$get_dataset_names())==0) if(length(thredds$get_dataset_names(xpath=".//d1:dataset"))==0) {
     errMsg <- sprintf("No datasets for the thredds")
-    config$logger.error(errMsg)
+    config$logger$ERROR(errMsg)
     stop(errMsg)
   }
   
@@ -29,13 +32,13 @@ handle_entities_thredds <- function(config, source){
   
   uri<-XML::parseURI(thredds$url)
   base_uri<-paste0(uri$scheme,"://",uri$server)
-  config$logger.info(sprintf("Thredds Base URL: %s", base_uri))
+  config$logger$INFO("Thredds Base URL: %s", base_uri)
   
   entities<-list()
   entities<- lapply(datasets, function(dataset){
     data<-thredds$get_datasets(dataset)[[dataset]]
     if(is.null(data)) data<-thredds$get_datasets(dataset,xpath=".//d1:dataset")[[dataset]]
-    config$logger.info(sprintf("Build entity for '%s'", data$url))
+    config$logger$INFO("Build entity for '%s'", data$url)
     
     #entity
     
@@ -45,18 +48,15 @@ handle_entities_thredds <- function(config, source){
     ncml<-unlist(sapply(names(thredds$list_services()), function(x) if(thredds$list_services()[[x]]["serviceType"]=="NCML") thredds$list_services()[[x]]["base"]))[1]
     if(!is.null(ncml)) ncml_uri<-paste0(base_uri,ncml,data$url) else ncml_uri<-NULL
     
-    config$logger.info(sprintf("OpenDAP URL for '%s': %s", data$url, odap_uri))
-    #layername<-ncdf4::nc_open(odap_uri)$var[[2]]$name
-    
     if(!is.null(ncml_uri)){
-      config$logger.info(sprintf("NCML URL for '%s': %s", data$url, ncml_uri))
-      entity <- handle_entities_ncml(config,ncml_uri)[[1]]
+      config$logger$INFO("NCML URL for '%s': %s", data$url, ncml_uri)
+      entity <- handle_entities_ncml(handler,ncml_uri,config)[[1]]
     } else if (!is.null(odap_uri)){
-      config$logger.info(sprintf("OpenDAP URL for '%s': %s", data$url, odap_uri))
-      entity <- handle_entities_ncdf(config,odap_uri)[[1]]
+      config$logger$INFO("OpenDAP URL for '%s': %s", data$url, odap_uri)
+      entity <- handle_entities_ncdf(handler,odap_uri,config)[[1]]
     }else{
       errMsg <- sprintf("No OpenDAP or NCML service for Thredds '%s'", thredds$url)
-      config$logger.error(errMsg)
+      config$logger$ERROR(errMsg)
       stop(errMsg)
     }
     #relations
@@ -90,7 +90,6 @@ handle_entities_thredds <- function(config, source){
       wms_uri<-paste0(base_uri,wms,data$url,"?service=WMS")
       wms_request<-paste0(base_uri,wms,data$url)
       wms <- ows4R::WMSClient$new(url = wms_request, serviceVersion = "1.3.0", logger = "DEBUG")
-      print(class(wms))
       thumbnails<-data.frame(NULL)
       for(layer in wms$getLayers()){
         layername<-layer$getName()  
@@ -98,7 +97,7 @@ handle_entities_thredds <- function(config, source){
           title<-sprintf("Map access - OGC Web Map Service (WMS) - %s", layer$getTitle())
           bbox<-paste(entity$spatial_bbox,collapse=",")
           srs<-if(!is.null(entity$srid))entity$srid else "EPSG:4326"
-          style<-layer$getStyle()
+          style<-layer$getStylenames()[1]
           thumbnail<-sprintf("%s&version=1.1.1&request=GetMap&LAYERS=%s&SRS=%s&BBOX=%s&WIDTH=600&HEIGHT=300&STYLES=%s&FORMAT=image/png&TRANSPARENT=true",
                              wms_uri,layername,srs,bbox,style)
           

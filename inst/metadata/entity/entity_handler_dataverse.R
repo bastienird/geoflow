@@ -1,5 +1,5 @@
 #handle_entities_dataverse
-handle_entities_dataverse <- function(config, source, handle = TRUE){
+handle_entities_dataverse <- function(handler, source, config, validate = TRUE, handle = TRUE){
   
   if(!requireNamespace("dataverse", quietly = TRUE)){
     stop("The Dataverse handler requires the 'dataverse' package")
@@ -22,7 +22,7 @@ handle_entities_dataverse <- function(config, source, handle = TRUE){
     ds <- dataverse::get_dataset(dataset = result$global_id, server = DATAVERSE$server)
     ds_doi <- unlist(strsplit(ds$datasetPersistentId, ":"))[2]
     ds_meta <- ds$metadataBlocks
-    config$logger.info(sprintf("Creating entity (%s out of %s) from Dataverse dataset with DOI '%s'", i, nrow(results), ds_doi))
+    config$logger$INFO("Creating entity (%s out of %s) from Dataverse dataset with DOI '%s'", i, nrow(results), ds_doi)
     
     #create entity
     entity <- geoflow::geoflow_entity$new()

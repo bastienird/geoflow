@@ -22,24 +22,37 @@ function(action, entity, config){
   include_service_identification <- action$getOption("include_service_identification")
   include_coverage_data_dimension_values <- action$getOption("include_coverage_data_dimension_values")
   include_coverage_service_dimension_values <- action$getOption("include_coverage_service_dimension_values")
+  include_object_identification_ids = action$getOption("include_object_identification_ids")
   
   #check inspire metadata validator configuration
-  INSPIRE_VALIDATOR <- NULL
-  if(inspire){
-    INSPIRE_VALIDATOR <- config$software$output$inspire
-    if(is.null(INSPIRE_VALIDATOR)){
-      errMsg <- "This action requires a INSPIRE metadata validator software to be declared in the configuration"
-      config$logger.error(errMsg)
-      stop(errMsg)
-    }
-  }
+  #as of 2025-05-02, there is no need anymore to have an API key to validate metadata
+  #therefore the INSPIRE metadata validator software declaration is not needed
+  # INSPIRE_VALIDATOR <- NULL
+  # if(inspire){
+  #   INSPIRE_VALIDATOR <- config$software$output$inspire
+  #   if(is.null(INSPIRE_VALIDATOR)){
+  #     errMsg <- "This action requires a INSPIRE metadata validator software to be declared in the configuration"
+  #     config$logger$ERROR(errMsg)
+  #     stop(errMsg)
+  #   }
+  # }
   
-  createResponsibleParty = function(x, role = NULL){
+  createResponsibleParty = function(x, role = NULL, roleId = NULL){
     if(is.null(role)) role <- x$role 
+    if(is.null(roleId)) roleId = role
     rp <- ISOResponsibleParty$new()
     if(is.null(x$firstName)) x$firstName = NA
     if(is.null(x$lastName)) x$lastName = NA
-    if(!is.na(x$firstName) && !is.na(x$lastName)) rp$setIndividualName(paste(x$firstName, x$lastName))
+    indName = ""
+    if(!is.na(x$firstName)) indName = x$firstName
+    if(!is.na(x$lastName)){
+      if(!nzchar(indName)){
+        indName = x$lastName
+      }else{
+        indName = paste(indName, x$lastName)
+      }
+    }
+    if(nzchar(indName)) rp$setIndividualName(indName)
     rp$setOrganisationName(x$organizationName)
     rp$setPositionName(x$positionName)
     rp$setRole(role)
@@ -68,7 +81,16 @@ function(action, entity, config){
     if(!is.null(orcid)){
       rp$parentAttrs[["xlink:href"]] <- paste0("https://orcid.org/", orcid)
     }
+    #check existence of ROR
+    ror = x$identifiers[["ror"]]
+    if(!is.null(ror)){
+      rp$parentAttrs[["xlink:href"]] <- paste0("https://ror.org/", ror)
+    }
     
+    if(include_object_identification_ids){
+      rp_id = paste(roleId, tolower(x$email), sep = "_")
+      rp$setAttr("id", geoflow::create_object_identification_id("party", rp_id))
+    }
     return(rp)
   }
   
@@ -111,14 +133,24 @@ function(action, entity, config){
   }
   md$setCharacterSet("utf8")
   md$setLanguage(entity$language)
-  md$setDateStamp(Sys.time())
+  
+  md_date = Sys.time()
+  if(length(entity$dates)>0){
+    md_dates = entity$dates[sapply(entity$dates, function(x){x$key == "metadata"})]
+    if(length(md_dates)>0){
+      md_date = md_dates[[1]]$value
+    }
+  }
+  md$setDateStamp(md_date)
   
   #locales (i18n/i10n support)
   if(length(entity$locales)>0){
+    ref_locales = utils::read.csv(system.file("extdata/codelists", "ISO-639-2_utf-8.txt", package = "geometa"),sep="|", stringsAsFactors = FALSE)
     for(locale in entity$locales){
       a_locale <- ISOLocale$new()
       a_locale$setId(locale)
-      a_locale$setLanguage(locale)
+      language = ref_locales[ref_locales$alpha2 == tolower(locale),]$alpha3[1]
+      a_locale$setLanguage(language)
       a_locale$setCharacterSet("utf8")
       md$addLocale(a_locale)
     }
@@ -141,8 +173,8 @@ function(action, entity, config){
   md$setDataSetURI(md$fileIdentifier)
   
   dctype <- entity$types[["generic"]]
-  dctype_idx = which(tolower(ISOHierarchyLevel$values()) == tolower(dctype))
-  dctype_iso = ISOHierarchyLevel$values()[dctype_idx]
+  dctype_idx = which(tolower(ISOScopeCode$values()) == tolower(dctype))
+  dctype_iso = ISOScopeCode$values()[dctype_idx]
   if(length(dctype_iso)==0) dctype_iso = "dataset"
   md$addHierarchyLevel(dctype_iso)
   
@@ -159,7 +191,7 @@ function(action, entity, config){
   
   if(length(entity$contacts)>0)for(entity_contact in entity$contacts){
     if(tolower(entity_contact$role) == "metadata"){
-      rp<-createResponsibleParty(entity_contact,"pointOfContact") 
+      rp<-createResponsibleParty(entity_contact,role = "pointOfContact", roleId = "metadata") 
       md$addContact(rp)
     } 
   }
@@ -256,7 +288,7 @@ function(action, entity, config){
   #adding contacts
   if(length(entity$contacts)>0)for(entity_contact in entity$contacts){
     if(tolower(entity_contact$role) != "metadata" && !startsWith(entity_contact$role, "processor")){
-      rp<-createResponsibleParty(entity_contact) 
+      rp<-createResponsibleParty(entity_contact, roleId = entity_contact$role) 
       ident$addPointOfContact(rp)
     }
   }
@@ -266,7 +298,7 @@ function(action, entity, config){
   ct <- ISOCitation$new()
   ct$setTitle(entity$titles[["title"]], locales = geoflow::get_locales_from(entity$titles[["title"]]))
   if("alternative" %in% names(entity$titles)){
-    ct$setAlternateTitle(entity$titles[["alternative"]])
+    ct$addAlternateTitle(entity$titles[["alternative"]])
   }
   for(date in entity$dates){
     if(date$key != "edition"){
@@ -311,9 +343,13 @@ function(action, entity, config){
   #adding responsible party (search for owner, otherwise take first contact)
   if(length(entity$contacts)>0){
     owners <- entity$contacts[sapply(entity$contacts, function(x){x$role == "owner"})]
-    if(length(owners)==0) owners <- list(entity$contacts[[1]])
+    if(length(owners)==0){
+      owner = entity$contacts[[1]]$clone(deep = T)
+      owner$setRole("owner")
+      owners <- list(owner)
+    }
     for(owner_entity in owners){
-      rp<-createResponsibleParty(owner_entity) 
+      rp<-createResponsibleParty(owner_entity, roleId = "responsible_party") 
       ct$citedResponsibleParty <- c(ct$citedResponsibleParty, rp)
     }
   }
@@ -325,8 +361,10 @@ function(action, entity, config){
     for(thumbnail in thumbnails){
       go <- ISOBrowseGraphic$new(
         fileName = thumbnail$link,
-        fileDescription = thumbnail$name
+        fileDescription = thumbnail$description
       )
+      thumbnail_id = paste(tolower(entity$identifiers[["id"]]), "thumbnail", tolower(thumbnail$link),sep="_")
+      if(include_object_identification_ids) go$setAttr("id", geoflow::create_object_identification_id("browsegraphic", thumbnail_id))
       ident$addGraphicOverview(go)
     }
   }
@@ -366,8 +404,9 @@ function(action, entity, config){
   }
   
   #maintenance information
+  default_maintenance = "asNeeded"
   maint <- ISOMaintenanceInformation$new()
-  maint$setMaintenanceFrequency("asNeeded")
+  maint$setMaintenanceFrequency(if(!is.null(entity$descriptions[["maintenance"]])) entity$descriptions[["maintenance"]] else default_maintenance)
   ident$addResourceMaintenance(maint)
   
   #legal constraints
@@ -379,12 +418,18 @@ function(action, entity, config){
       legal_constraints$addUseConstraint("license")
       for(license in licenses){
         for(value in license$values){
-          legal_constraints$addUseLimitation(value, locales = geoflow::get_locales_from(value))
+          license_info = zen4R::ZenodoManager$new()$getLicenseById(URLencode(value))
+          if(!is.null(license_info)){
+            value = ISOAnchor$new(name = license_info$title[[1]], href = license_info$props$url)
+            legal_constraints$useLimitation = c(legal_constraints$useLimitation, value)
+          }else{
+            legal_constraints$addUseLimitation(value, locales = geoflow::get_locales_from(value))
+          }
         }
       }
     }
     #use limitation
-    uses <- entity$rights[sapply(entity$rights, function(x){tolower(x$key) %in% c("use","uselimitation")})]
+    uses <- entity$rights[sapply(entity$rights, function(x){tolower(x$key) %in% c("use","uselimitation","termsofuse", "disclaimer", "citation")})]
     if(length(uses)>0){
       for(use in uses){
         for(value in use$values){
@@ -395,12 +440,20 @@ function(action, entity, config){
     #use constraints
     useConstraints <- entity$rights[sapply(entity$rights, function(x){tolower(x$key) == "useconstraint"})]
     if(length(useConstraints)>0){
-      for(useConstraint in useConstraints) legal_constraints$addUseConstraint(useConstraint$value)
+      for(useConstraint in useConstraints){
+        for(value in useConstraint$values){
+          legal_constraints$addUseConstraint(value) 
+        }
+      }
     }
     #access constraints
     accessConstraints <- entity$rights[sapply(entity$rights, function(x){tolower(x$key) == "accessconstraint"})]
     if(length(accessConstraints)>0){
-      for(accessConstraint in accessConstraints) legal_constraints$addAccessConstraint(accessConstraint$value)
+      for(accessConstraint in accessConstraints){
+        for(value in accessConstraint$values){
+          legal_constraints$addAccessConstraint(value)
+        }
+      }
     }
     #other constraints
     otherConstraints <- entity$rights[sapply(entity$rights, function(x){tolower(x$key) == "otherconstraint"})]
@@ -438,8 +491,9 @@ function(action, entity, config){
   #bounding polygons from data (if any features & 'addfeatures' option is enabled)
   if(!is.null(features) && addfeatures){
     bp <- ISOBoundingPolygon$new()
+    geom_field = colnames(features)[sapply(colnames(features), function(x){is(features[[x]],"sfc")})][1]
     for(i in 1:nrow(features)){
-      geom <- GMLAbstractGeometry$fromSimpleFeatureGeometry(features[i,]$geometry[[1]])
+      geom <- GMLAbstractGeometry$fromSimpleFeatureGeometry(features[i,][geom_field][[1]])
       geom$attrs["gml:id"] <- paste0("fid.",as.character(features[i,][featureid])[1])
       bp$polygon <- c(bp$polygon, geom)
     }
@@ -467,11 +521,26 @@ function(action, entity, config){
   if(!is.null(entity$temporal_extent)){
     time <- ISOTemporalExtent$new()
     if(!is.null(entity$temporal_extent$instant)){
-      gmltimeinstant <- GMLTimeInstant$new(timePosition = entity$temporal_extent$instant)
+      gmltimeinstant <- GMLTimeInstant$new()
+      instant = entity$temporal_extent$instant
+      gmltimeinstant$setTimePosition(timePosition = if(is.na(instant)) NULL else instant,
+                                    frame = attr(instant, "frame"),
+                                    calendarEraName = attr(instant, "calendarEraName"),
+                                    indeterminatePosition = attr(instant, "indeterminatePosition"))
       time$setTimeInstant(gmltimeinstant)
     }
     if(!is.null(entity$temporal_extent$start) & !is.null(entity$temporal_extent$end)){
-      gmltimeperiod <- GMLTimePeriod$new(beginPosition = entity$temporal_extent$start, endPosition = entity$temporal_extent$end)
+      gmltimeperiod <- GMLTimePeriod$new()
+      start = entity$temporal_extent$start
+      gmltimeperiod$setBeginPosition(beginPosition = if(is.na(start)) NULL else start,
+                                     frame = attr(start, "frame"),
+                                     calendarEraName = attr(start, "calendarEraName"),
+                                     indeterminatePosition = attr(start, "indeterminatePosition"))
+      end = entity$temporal_extent$end
+      gmltimeperiod$setEndPosition(endPosition = if(is.na(end)) NULL else end,
+                                   frame = attr(start, "frame"),
+                                   calendarEraName = attr(end, "calendarEraName"),
+                                   indeterminatePosition = attr(end, "indeterminatePosition"))
       time$setTimePeriod(gmltimeperiod)
     }
     extent$addTemporalElement(time)
@@ -560,7 +629,7 @@ function(action, entity, config){
                             "wms110" = "1.1.0",
                             "wms111" = "1.1.1",
                             "wms130" = "1.3.0")
-      config$logger.info(sprintf("Configuring WMS client on '%s' (version = '%s')", wms_link, wms_version))
+      config$logger$INFO("Configuring WMS client on '%s' (version = '%s')", wms_link, wms_version)
       
       if(!requireNamespace("ows4R", quietly = TRUE)){
         stop("The 'geometa-create-iso-19115' action requires the 'ows4R' package")
@@ -761,7 +830,7 @@ function(action, entity, config){
     if(length(distributors)==0) distributors <- list(entity$contacts[[1]])
     for(distributor_entity in distributors){
       dist_ent = ISODistributor$new()
-      dist_rp<-createResponsibleParty(distributor_entity) 
+      dist_rp<-createResponsibleParty(distributor_entity, roleId = "distributor") 
       dist_ent$setContact(dist_rp)
       distrib$addDistributor(dist_ent)
     }
@@ -775,8 +844,10 @@ function(action, entity, config){
     doi_or <- ISOOnlineResource$new()
     doi_or$setLinkage(paste0("http://dx.doi.org/", the_doi))
     doi_or$setName("DOI")
-    doi_or$setDescription("Digital Object Identifier")
+    doi_desc = set_i18n(term_key = "doi")
+    doi_or$setDescription(doi_desc, locales = geoflow::get_locales_from(doi_desc))
     doi_or$setProtocol("WWW:LINK-1.0-http--link")
+    if(include_object_identification_ids) doi_or$setAttr("id", geoflow::create_object_identification_id("onlineresource", the_doi))
     dto$addOnlineResource(doi_or)
   }
   
@@ -817,7 +888,7 @@ function(action, entity, config){
         name$setName(http_relation$name)
       }
       or$setName(name)
-      or$setDescription(http_relation$description)
+      or$setDescription(http_relation$description, locales = geoflow::get_locales_from(http_relation$description))
       protocol <- switch(http_relation$key,
                          "http" = "WWW:LINK-1.0-http--link",
                          "download" = "WWW:DOWNLOAD-1.0-http--download",
@@ -839,6 +910,12 @@ function(action, entity, config){
                          "WWW:LINK-1.0-http--link"
       )
       or$setProtocol(protocol)
+      
+      if(include_object_identification_ids) if(any(sapply(c("wms", "wfs", "wcs","download"), function(x){startsWith(http_relation$key, x)}))) {
+        resource_id = paste(tolower(entity$identifiers[["id"]]), http_relation$key, if(!is.null(mimeType)) mimeType else "", tolower(http_relation$name),sep="_")
+        or$setAttr("id", geoflow::create_object_identification_id("onlineresource", resource_id))
+      }
+      
       dto$onLine = c(dto$onLine,or)
     }
   }
@@ -848,7 +925,7 @@ function(action, entity, config){
   #data quality - provenance / lineage
   if(!is.null(entity$provenance)){
     dq_lineage <- ISODataQuality$new()
-    dq_lineage_scope <- ISOScope$new()
+    dq_lineage_scope <- ISODataQualityScope$new()
     dq_lineage_scope$setLevel(dctype_iso)
     dq_lineage$setScope(dq_lineage_scope)
     lineage <- ISOLineage$new()
@@ -862,7 +939,7 @@ function(action, entity, config){
         
         #processor as responsability party
         for(processor in process$processors){
-          rpp<-createResponsibleParty(processor) 
+          rpp<-createResponsibleParty(processor, roleId = "processor") 
           processStep$addProcessor(rpp)
         }
         lineage$addProcessStep(processStep)
@@ -875,7 +952,7 @@ function(action, entity, config){
   #data quality other than lineage
   if(inspire){
     dq2 <- ISODataQuality$new()
-    scope2 <- ISOScope$new()
+    scope2 <- ISODataQualityScope$new()
     scope2$setLevel(dctype_iso)
     dq2$setScope(scope2)
     
@@ -883,8 +960,9 @@ function(action, entity, config){
     dc_inspire1 <- ISODomainConsistency$new()
     cr_inspire1 <- ISOConformanceResult$new()
     cr_inspire_spec1 <- ISOCitation$new()
-    cr_inspire_spec1$setTitle("Commission Regulation (EU) No 1089/2010 of 23 November 2010 implementing Directive 2007/2/EC of the European Parliament and of the Council as regards interoperability of spatial data sets and services")
-    cr_inspire1$setExplanation("See the referenced specification")
+    inspire_sds = set_i18n("inspire_spatial_data_services")
+    cr_inspire_spec1$setTitle(inspire_sds, locales = geoflow::get_locales_from(inspire_sds))
+    cr_inspire1$setExplanation(NA)
     cr_inspire_date1 <- ISODate$new()
     cr_inspire_date1$setDate(as.Date(ISOdate(2010,12,8)))
     cr_inspire_date1$setDateType("publication")
@@ -897,8 +975,9 @@ function(action, entity, config){
     dc_inspire2 <- ISODomainConsistency$new()
     cr_inspire2 <- ISOConformanceResult$new()
     cr_inspire_spec2 <- ISOCitation$new()
-    cr_inspire_spec2$setTitle("COMMISSION REGULATION (EC) No 1205/2008 of 3 December 2008 implementing Directive 2007/2/EC of the European Parliament and of the Council as regards metadata")
-    cr_inspire2$setExplanation("See the referenced specification")
+    inspire_md = set_i18n("inspire_metadata")
+    cr_inspire_spec2$setTitle(inspire_md, locales = geoflow::get_locales_from(inspire_md))
+    cr_inspire2$setExplanation(NA)
     cr_inspire_date2 <- ISODate$new()
     cr_inspire_date2$setDate(as.Date(ISOdate(2008,12,4)))
     cr_inspire_date2$setDateType("publication")
@@ -916,7 +995,7 @@ function(action, entity, config){
   if(length(actions)>0) fc_action <- actions[[1]]
   if(!is.null(fc_action)){
     fcIdentifier <- paste0(entity$identifiers[["id"]],"_dsd")
-    config$logger.info("Adding content information (feature catalogue description) to ISO 19115")
+    config$logger$INFO("Adding content information (feature catalogue description) to ISO 19115")
     fcd <- ISOFeatureCatalogueDescription$new()
     fcd$setComplianceCode(TRUE)
     fcd$addLanguage(entity$language)
@@ -928,7 +1007,7 @@ function(action, entity, config){
   #we save the metadata
   #saveRDS(md, file.path(getwd(), "metadata", paste0(entity$identifiers[["id"]], ".rds")))
   md$save(file.path(getwd(), "metadata", paste0(entity$getEntityJobDirname(), "_ISO-19115.xml")), 
-          inspire = inspire, inspireValidator = INSPIRE_VALIDATOR)
+          inspire = inspire)
   rm(md)
 
 }

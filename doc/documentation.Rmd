@@ -24,7 +24,7 @@ Many thanks to the following organizations that have provided fundings for stren
 
 The following projects have contributed to strenghten ``geoflow``:
 
-<a href="https://www.blue-cloud.org"><img height=100 width=300 src="https://www.blue-cloud.org/sites/all/themes/arcadia/logo.png"/></a>
+<a href="https://www.blue-cloud.org"><img height=100 width=300 src="https://hackathon.blue-cloud.org/wp-content/uploads/2021/11/Blue-cloud_extended_color.png"/></a> 
 
 _Blue-Cloud has received funding from the European Union's Horizon programme call BG-07-2019-2020, topic: [A] 2019 - Blue Cloud services, Grant Agreement No.862409._
 
@@ -102,7 +102,7 @@ install_github("r-geoflow/geoflow", dependencies = c("Depends", "Imports"))
 
 #### 4.2 How to use geoflow in R
 
-In R, using ``geoflow`` consists essentially in running the function ``executeWorkflow", which takes a main parameter: the name of a configuration file in JSON format. An optional _dir_ parameter can be specified to instruct geoflow to store execution files in:
+In R, using ``geoflow`` consists essentially in running the function ``executeWorkflow", which takes a main parameter: the name of a configuration file in JSON or YAML format. An optional _dir_ parameter can be specified to instruct geoflow to store execution files in:
 
 ```{r, eval = FALSE}
 executeWorkflow("config.json", dir = NULL)
@@ -176,7 +176,11 @@ The ``options`` are by definition optional. The table below defines the possible
 Name|Definition|Default value
 ----|----------|-------------
 ``line_separator``|Defines the suite of characters used for splitting metadata components with a single tabular cell of an _entity_ (eg. Description field)|**_\n**
-``skipFileDownload``|Indicates whether data associated to an entity should be download|**false**
+``skipDataDownload``|Indicates whether downloading data associated to an entity should be skipped|**false**
+``skipEnrichWithData``|Indicates whether actual data objects (features/coverages) reading and association with entity data should be skipped or not|**false**
+``skipEnrichWithDatatypes``|Indicates whether entity data object should be enriched with data types. Applies to zip archives that are scanned to detect which file extension should be used as `sourceType` / `uploadType`|**false**
+``skipDynamicBbox``|Indicates whether bbox inherited from data should be ignored.|**false**
+``enrichDataStrategy``|Strategy to use when inheriting spatial bbox from multiple data objects, either "first" (take the first data object for the bbox, or "union" (union of bboxes from the different data objects).|**"first"*
 
 
 Note on the **mode**:
@@ -205,6 +209,25 @@ JSON snippet of _profile_:
     "skipFileDownload": false
   }
 }
+```
+
+###### YAML
+
+YAML snippet of _profile_:
+
+```{yaml}
+profile:
+  id: my-workflow-identifier
+  name: My workflow
+  project: Test geoflow project
+  organization: My organization
+  logos:
+    - https://via.placeholder.com/300x150.png/09f/fff?text=geometa
+    - https://via.placeholder.com/300x150.png/09f/fff?text=ows4R
+  mode: entity
+  options:
+    line_separator: "_\n"
+    skipFileDownload: false
 ```
 
 <a name="geoflow_config_metadata"/>
@@ -309,16 +332,62 @@ The JSON configuration snippet for a custom contact LDAP ``handler`` would look 
     ]
 ```
 
-In R, the ``my_ldap_function_to_load_contacts`` function writen by user in ``my_ldap_script.R`` should implement a function having 2 arguments: ``config`` (to access the overall workflow configuration object loaded with ``initWorkflow``), ``source`` (the source as defined in above JSON snippet):
+In R, the ``my_ldap_function_to_load_contacts`` function writen by user in ``my_ldap_script.R`` should implement a function having 3 arguments: 
+* ``handler`` as self object for the created handler
+* ``source`` (the source as defined in above JSON snippet):
+* ``config`` (to access the overall workflow configuration object loaded with ``initWorkflow``)
 
 ```{r, eval = FALSE}
-  my_ldap_function_to_load_contacts <- function(config, source){
+  my_ldap_function_to_load_contacts <- function(handler, source, config){
     contacts <- list()
     #here some custom business logic to load contacts from a LDAP
     #....
     return(contacts)
   }
 
+```
+
+###### YAML
+
+* YAML snippet for _entities_ handled with a Google spreadsheet:
+
+```{yaml}
+entities:
+  - handler: gsheet
+    source": https://docs.google.com/spreadsheets/d/1iG7i3CE0W9zVM3QxWfCjoYbqj1dQvKsMnER6kqwDiqM/edit?usp=sharing
+```
+
+* YAML snippet for _contacts_ handled with a Google spreadsheet:
+
+```{yaml}
+contacts:
+  - handler: gsheet
+    source: https://docs.google.com/spreadsheets/d/144NmGsikdIRE578IN0McK9uZEUHZdBuZcGy1pJS6nAg/edit?usp=sharing
+```
+
+* YAML snippet for the metadata part (including _entities_ and _contacts_)
+
+```{yaml}
+metadata:
+  entities:
+    - handler: gsheet
+      source: https://docs.google.com/spreadsheets/d/1iG7i3CE0W9zVM3QxWfCjoYbqj1dQvKsMnER6kqwDiqM/edit?usp=sharing
+  contacts:
+    - handler: gsheet
+      source: https://docs.google.com/spreadsheets/d/144NmGsikdIRE578IN0McK9uZEUHZdBuZcGy1pJS6nAg/edit?usp=sharing
+```
+
+* YAML snippet for custom handlers
+
+It is possible to use a custom ``handler`` function provided by the user. For this,  the ``handler`` should be the _name_ of the R function to be provided by an R script. The R script must be defined in a extra property named ``script``. In this configuration, the ``source`` property becomes optional (it could be hardcoded in the user's ``handler``` function if this ``source`` is not expected to change from one configuration to another).
+
+The YAML configuration snippet for a custom contact LDAP ``handler`` would look like this:
+
+```{yaml}
+contacts:
+  handler: my_ldap_function_to_load_contacts
+  source: my_ldap_endpoint
+  script: my_ldap_script.R
 ```
 
 <a name="geoflow_config_software"/>
@@ -445,6 +514,76 @@ Since it is a list of software, the base JSON definition will be an _array_ (usi
 ]
 ```
 
+###### YAML
+
+* YAML snippet for declaring a ```database``` (_input_ software) for data fetching:
+
+```{yaml}
+id: my-database
+type: input
+software_type: dbi
+parameters:
+  drv: PostgreSQL
+  user: user
+  password: pwd
+  host: localhost
+  port: 5432
+  dbname: mydb
+```
+
+* YAML snippet for declaring a ```geoserver``` (_output_ software) for data publishing:
+
+```{yaml}
+id: my-geoserver
+type: output
+software_type: geoserver
+parameters:
+  url: http://localhost:800/geoserver
+	user: admin
+	pwd: geoserver
+	logger: DEBUG
+properties:
+  workspace: my_geoserver_workspace
+	store: my_geoserver_store
+```
+
+* YAML snippet for the overall "software" component
+
+Since it is a list of software, the base JSON definition will be an _array_ (using square brackets ```[ ]```):
+
+```{yaml}
+software: <software here>
+```
+
+* JSON snippet for the overall "software" component (including one _input_ - a database - and one _output_ - a geoserver -)
+
+```{yaml}
+software
+  - id: my-database
+    type: input
+		software_type: dbi
+		parameters:
+			drv: PostgreSQL
+			user: user
+			password: pwd
+			host: localhost
+			port: 5432
+			dbname: mydb
+  - id: my-geoserver
+		type: output
+		software_type: geoserver
+		parameters:
+			url: http://localhost:800/geoserver
+			user: admin
+			pwd: geoserver
+			logger: DEBUG
+		properties:
+			workspace: my_geoserver_workspace
+			store: my_geoserver_store
+  }
+]
+```
+
 
 * **How to use a user's custom software**
 
@@ -511,6 +650,25 @@ Since it is a list of _actions_, the base JSON definition will be an _array_ (us
 ]
 ```
 
+###### YAML
+
+* YAML snippet for an action (eg "geometa-create-iso-19115") with an option enabled:
+
+```{yaml}
+id: geometa-create-iso-19115
+options:
+  logo: true
+run: true
+```
+
+* YAML snippet for the overall list of _actions_
+
+Since it is a list of _actions_, the base YAML definition will be an _array_ (using square brackets ```[ ]```):
+
+```{yaml}
+actions: <here will be listed the actions to perform>
+```
+
 
 <a name="geoflow_config_register"/>
 
@@ -543,6 +701,16 @@ Since it is a list of registers, the base JSON definition will be an _array_ (us
 "registers": [
      <here will be listed the registers>
 ]
+```
+
+###### YAML
+
+* YAML snippet for the overall "registers" component
+
+Since it is a list of registers, the base JSON definition will be an _array_ (using square brackets ```[ ]```):
+
+```{yaml}
+registers: <here will be listed the registers>
 ```
 
 * **How to use a user's custom register**

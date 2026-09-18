@@ -8,12 +8,13 @@
 #' @title Geoflow relation class
 #' @description This class models an relation
 #' @keywords relation
-#' @return Object of \code{\link{R6Class}} for modelling an relation
-#' @format \code{\link{R6Class}} object.
+#' @return Object of \code{\link[R6]{R6Class}} for modelling an relation
+#' @format \code{\link[R6]{R6Class}} object.
 #' 
 #' @examples
 #' \dontrun{
 #'   relation <- geoflow_relation$new()
+#'   relation$setProv("user")
 #'   relation$setKey("wms")
 #'   relation$setLink("http://somelink/wms")
 #'   relation$setMimeType("application/xml")
@@ -35,6 +36,8 @@ geoflow_relation <- R6Class("geoflow_relation",
    name = NULL,
    #'@field description relation name
    description = NULL,
+   #'@field prov provenance,
+   prov = "user",
    
    #'@description Initializes an object of class \link{geoflow_relation}
    #'@param str character string to initialize from using key-based syntax
@@ -90,6 +93,13 @@ geoflow_relation <- R6Class("geoflow_relation",
    #'@param description description
    setDescription = function(description){
      self$description <- description
+   },
+   
+   #'@description Set provenance
+   #'@param prov provenance
+   setProv = function(prov = c("user","geoflow")){
+     prov = match.arg(prov)
+     self$prov = prov
    }
  )                                  
 )

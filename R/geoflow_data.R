@@ -8,19 +8,19 @@
 #' @title Geoflow data class
 #' @description This class models a data object
 #' @keywords data
-#' @return Object of \code{\link{R6Class}} for modelling a data object
-#' @format \code{\link{R6Class}} object.
+#' @return Object of \code{\link[R6]{R6Class}} for modelling a data object
+#' @format \code{\link[R6]{R6Class}} object.
 #' 
 #' @author Emmanuel Blondel <emmanuel.blondel1@@gmail.com>
 #'
 geoflow_data <- R6Class("geoflow_data",
   private = list(
-    supportedSourceTypes = c("dbtable", "dbview", "dbquery","shp", "csv", "gpkg", "other","nc", "geotiff"),
-    supportedUploadTypes = c("dbtable", "dbview", "dbquery","shp", "gpkg", "other","nc", "geotiff"),
+    supportedSourceTypes = c("dbtable", "dbview", "dbquery", "zip", "shp", "csv", "gpkg", "other","nc", "geotiff","parquet", "wfs", "wcs"),
+    supportedUploadTypes = c("dbtable", "dbview", "dbquery", "shp", "gpkg", "other","nc", "geotiff", "parquet"),
     supportedGeomPossibleNames = c("the_geom", "geom", "wkt", "geom_wkt", "wkb", "geom_wkb"),
     supportedXPossibleNames = c("x","lon","long","longitude","decimalLongitude"),
     supportedYPossibleNames = c("y","lat","lati","latitude","decimalLatitude"),
-    supportedSpatialRepresentationTypes = c("vector","grid"),
+    supportedSpatialRepresentationTypes = c("vector","grid","textTable"),
     supportedEnvelopeCompositionTypes = c("UNION", "INTERSECTION")
   ),
   public = list(
@@ -29,6 +29,8 @@ geoflow_data <- R6Class("geoflow_data",
     dir = NULL,
     #'@field data list of object of class \link{geoflow_data} in case we point to a data directory
     data = list(),
+    #'@field restricted indicates whether the data is under restricted access or not
+    restricted = FALSE,
     
     #ACCESS / SOURCE related fields
     #----------------------------------------------------------------------------
@@ -36,13 +38,15 @@ geoflow_data <- R6Class("geoflow_data",
     access = "default",
     #'@field source source
     source = NULL,
+    #'@field sourceFid sourceFid
+    sourceFid = NULL,
     #'@field sourceSql sourceSql
     sourceSql = NULL,
     #'@field sourceType source type
     sourceType = "other",
-    #'@field sourceZip create a zip for the sources
+    #'@field sourceZip create a zip for the sources (DEPRECATED with #344)
     sourceZip = FALSE,
-    #'@field sourceZipOnly create a zip only for the sources, remove source files
+    #'@field sourceZipOnly create a zip only for the sources, remove source files (DEPRECATED with #344)
     sourceZipOnly = FALSE,
     
     #UPLOAD related fields
@@ -63,6 +67,13 @@ geoflow_data <- R6Class("geoflow_data",
     store = NULL,
     #'@field layername layer name
     layername = NULL,
+    #'@field layertitle layer title
+    layertitle = NULL,
+    #'@field layerdesc layer description
+    layerdesc = NULL,
+    #'@field layeruri layer URI
+    #'layeruri layer URI
+    layeruri = NULL,
     #'@field styles styles
     styles = list(),
     #'@field styleUpload upload styles
@@ -129,6 +140,12 @@ geoflow_data <- R6Class("geoflow_data",
         })
         names(data_props) <- sapply(data_props, function(x){x$key})
         
+        #restricted
+        if(any(sapply(data_props, function(x){x$key=="restricted"}))){
+          restricted = as.logical(data_props$restricted$values[[1]])
+          if(!is.na(restricted)) self$restricted = restricted
+        }
+        
         #spatialRepresentationType
         if(!any(sapply(data_props, function(x){x$key=="spatialRepresentationType"}))){
           self$setSpatialRepresentationType("vector")
@@ -139,10 +156,6 @@ geoflow_data <- R6Class("geoflow_data",
         #access to use for reaching sources
         if(!is.null(data_props$access)){
           access <- data_props$access$values[[1]]
-          if(!access %in% list_data_accessors()$id){
-            stop(sprintf("Value '%s' does not match any valid data accessor id. 
-                         See valid values with geoflow::list_data_accessors()", access))
-          }
           self$setAccess(access) 
         }
         
@@ -155,38 +168,38 @@ geoflow_data <- R6Class("geoflow_data",
         }
         
         #source
-        if(!self$sourceType %in% c("dbtable", "dbquery", "dbview")){
-          if(!any(sapply(data_props, function(x){x$key=="source"})) && !any(sapply(data_props, function(x){x$key=="dir"}))){
-            stop("One or more data 'source' (or 'dir', as directory for sources) is mandatory")
-          }
-          if(any(sapply(data_props, function(x){x$key=="source"}))) self$setSource(data_props$source$values)
-        }
+        if(any(sapply(data_props, function(x){x$key=="source"}))) self$setSource(data_props$source$values)
           
+        #sourceFid
+        if(!is.null(data_props$sourceFid)){
+          self$setSourceFid(data_props$sourceFid$values)
+        }
+        
         #sourceSql
         if(!is.null(data_props$sourceSql)){
           sourceSql <- paste(data_props$sourceSql$values, collapse=",")
           self$setSourceSql(sourceSql)
         }
         
-        #sourceZip
-        if(!is.null(data_props$sourceZip)){
-          sourceZip <- as.logical(tolower(data_props$sourceZip$values[[1]]))
-          if(!is.na(sourceZip)){
-            self$setSourceZip(sourceZip) 
-          }
-        }else{
-          self$setSourceZip(FALSE) 
-        }
+        #sourceZip (DEPRECATED with #344)
+        #if(!is.null(data_props$sourceZip)){
+        #  sourceZip <- as.logical(tolower(data_props$sourceZip$values[[1]]))
+        #  if(!is.na(sourceZip)){
+        #    self$setSourceZip(sourceZip) 
+        #  }
+        #}else{
+        #  self$setSourceZip(FALSE) 
+        #}
         
-        #sourceZipOnly
-        if(!is.null(data_props$sourceZipOnly)){
-          sourceZipOnly <- as.logical(tolower(data_props$sourceZipOnly$values[[1]]))
-          if(!is.na(sourceZipOnly)){
-            self$setSourceZipOnly(sourceZipOnly) 
-          }
-        }else{
-          self$setSourceZipOnly(FALSE) 
-        }
+        #sourceZipOnly (DEPRECATED with #344)
+        #if(!is.null(data_props$sourceZipOnly)){
+        #  sourceZipOnly <- as.logical(tolower(data_props$sourceZipOnly$values[[1]]))
+        #  if(!is.na(sourceZipOnly)){
+        #    self$setSourceZipOnly(sourceZipOnly) 
+        #  }
+        #}else{
+        #  self$setSourceZipOnly(FALSE) 
+        #}
         
         #uploadSource
         if(any(sapply(data_props, function(x){x$key=="uploadSource"}))){
@@ -222,9 +235,20 @@ geoflow_data <- R6Class("geoflow_data",
         }
         
         #layername (if any)
-        #not mandatory, can be used for subset layers
         if(!is.null(data_props$layername)){
           self$setLayername(data_props$layername$values[[1]])
+        }
+        #layertitle (if any)
+        if(!is.null(data_props$layertitle)){
+          self$setLayertitle(data_props$layertitle$values[[1]])
+        }
+        #layerdesc (if any)
+        if(!is.null(data_props$layerdesc)){
+          self$setLayerdesc(data_props$layerdesc$values[[1]])
+        }
+        #layeruri (if any)
+        if(!is.null(data_props$layeruri)){
+          self$setLayeruri(data_props$layeruri$values[[1]])
         }
         
         #sql
@@ -242,9 +266,6 @@ geoflow_data <- R6Class("geoflow_data",
         if(length(params)>0){
           #check and set parameter
           for(param in params){
-            if(!length(param$values) %in% c(2,3)){
-              stop("Parameter definition should be compound by 3 elements: fieldname, alias, regexp and default value")
-            }
             if(length(param$values)==2) param$values[[3]] <- ""
             fieldname <- param$values[[1]]
             param_alias <- attr(fieldname, "description")
@@ -253,16 +274,6 @@ geoflow_data <- R6Class("geoflow_data",
             regexp <- param$values[[2]]
             defaultvalue <- param$values[[3]]
             self$setParameter(param_alias, fieldname, regexp, defaultvalue)
-          }
-          #check compliance of dbquery
-          sqlquery <- self$sql
-          #with fieldnames
-          if(!all(sapply(self$parameters, function(x){regexpr(x$fieldname,sqlquery)>0}))){
-            stop("At least one parameter fieldname declared is not used in the data source query!")
-          }
-          #with param aliases
-          if(!all(sapply(self$parameters, function(x){regexpr(paste0("%",x$name,"%"),sqlquery)>0}))){
-            stop("At least one parameter name declared is not used in the data source query!")
           }
         }
         
@@ -286,17 +297,8 @@ geoflow_data <- R6Class("geoflow_data",
         }
         bands <- data_props[sapply(data_props, function(x){x$key=="band"})]
         if(length(bands)>0){
-          if(self$spatialRepresentationType != "grid"){
-            stop("The specification of bands is only possible for a grid spatial representation!")
-          }
-          if(self$uploadType != "geotiff"){ #TODO to extend to other coverage formats
-            stop(" The specification of bands is only possible for a 'geotiff' upload type")
-          }
           #check and set parameter
           for(band in bands){
-            if(length(band$values) != 2){
-              stop("Band definition should be compound by 2 elements: name (coverage name), index")
-            }
             covname <- band$values[[1]]
             index <- band$values[[2]]
             self$setBand(covname, index)
@@ -382,7 +384,7 @@ geoflow_data <- R6Class("geoflow_data",
             isSourceUrl <- regexpr('(http|https)[^([:blank:]|\\\'|<|&|#\n\r)]+', script) > 0
             if(!isSourceUrl){
               if(!is_absolute_path(script)){
-                script_to_source<-paste0("file.path(config$session_wd,\"",script,"\")")
+                script_to_source<-paste0("geoflow::get_absolute_path(\"",script,"\", base = config$wd)")
               }else{
                 script_to_source<-paste0("\"",script,"\"")
               }
@@ -411,14 +413,17 @@ geoflow_data <- R6Class("geoflow_data",
         
         #datadir
         if(any(sapply(data_props, function(x){x$key=="dir"}))){
+          accessor <- NULL
+          accessor_software <- NULL
           data_dir <- data_props$dir$values[[1]]
           self$dir <- data_dir
           ext_data_files <- list()
           ext_sld_files <- list()
+          all_data_files = list.files(data_dir, full.names = T)
           if(self$access == "default"){
-            if(!is_absolute_path(data_dir) && !is.null(config)) data_dir <- file.path(config$session_wd, datasource_uri)
+            if(!is_absolute_path(data_dir) && !is.null(config)) data_dir <- geoflow::get_absolute_path(datasource_uri, base = config$wd)
             if(!dir.exists(data_dir)){
-              config$logger.error("Data dir doesn't exist!")
+              config$logger$ERROR("Data dir doesn't exist!")
             }
             #local access
             #TODO remote access
@@ -431,7 +436,7 @@ geoflow_data <- R6Class("geoflow_data",
               )
               ext_data_files <- list.files(data_dir, pattern = paste0(".", ext), full.names = T)
             }else{
-              ext_data_files <- list.files(data_dir, full.names = T)
+              ext_data_files <- all_data_files
             }
             #exclude dirs
             ext_data_files = ext_data_files[!dir.exists(ext_data_files)]
@@ -441,13 +446,13 @@ geoflow_data <- R6Class("geoflow_data",
               accessors <- list_data_accessors(raw = TRUE)
               accessor <- accessors[sapply(accessors, function(x){x$id == self$access})][[1]]
               
-              config$logger.info(sprintf("Copying data to job data directory from remote file(s) using accessor '%s'", accessor$id))
+              config$logger$INFO("Copying data to job data directory from remote file(s) using accessor '%s'", accessor$id)
               access_software <- NULL
               if(!is.na(accessor$software_type)){
-                config$logger.info(sprintf("Accessor '%s' seems to require a software. Try to locate 'input' software", accessor$id))
+                config$logger$INFO("Accessor '%s' seems to require a software. Try to locate 'input' software", accessor$id)
                 accessor_software <- config$software$input[[accessor$software_type]]
                 if(is.null(accessor_software)){
-                  config$logger.info(sprintf("Accessor '%s' doesn't seem to have the required 'input' software. Try to locate 'output' software", accessor$id))
+                  config$logger$INFO("Accessor '%s' doesn't seem to have the required 'input' software. Try to locate 'output' software", accessor$id)
                   accessor_software <- config$software$output[[accessor$software_type]]
                 }
               }
@@ -455,22 +460,46 @@ geoflow_data <- R6Class("geoflow_data",
                 ext_data_files <- accessor$list(resource = data_dir, software = accessor_software)
               }else{
                 errMsg <- sprintf("No data access 'list' method for accessor '%s'", )
-                if(!is.null(config)) config$logger.error(errMsg)
+                if(!is.null(config)) config$logger$ERROR(errMsg)
                 stop(errMsg)
               }
             }else{
               errMsg <- sprintf("No config available to invoke data accessor '%s'", )
-              if(!is.null(config)) config$logger.error(errMsg)
+              if(!is.null(config)) config$logger$ERROR(errMsg)
               stop(errMsg)
             }
           }
           
-          if(length(ext_data_files)>0){
-            ext_sld_files <- ext_data_files[endsWith(ext_data_files,".sld")]
+          if(length(all_data_files)>0){
+            ext_sld_files <- all_data_files[endsWith(all_data_files,".sld")]
             ext_data_files <-ext_data_files[!endsWith(ext_data_files,".sld")]
           }
  
+          #detect presence of data files register
+          data_files_register <- NULL
+          data_files_register_file = all_data_files[basename(all_data_files) == "register.csv"]
+          if(length(data_files_register_file)>0){
+            data_files_register_file = data_files_register_file[1]
+            target_register_file = data_files_register_file
+            if(!is.null(accessor)){
+              target_register_file <- file.path(tempdir(), "register.csv")
+              accessor$download(
+                resource = data_files_register_file,
+                file = "register.csv", 
+                path = target_register_file,
+                software = accessor_software,
+                unzip = FALSE
+              )
+            }
+            data_files_register = as.data.frame(readr::read_csv(target_register_file))
+            register_colnames = c("code","uri","label","definition")
+            if(!all(register_colnames %in% colnames(data_files_register))){
+             stop("A data files register has been found but doesn't follow the standard structure (code,uri,label,definition)") 
+            }
+          }
+          
           #geoflow build children
+          ext_data_files = ext_data_files[basename(ext_data_files) != "register.csv"]
           if(length(ext_data_files)>0){
             self$data <- lapply(ext_data_files, function(data_file){
               ext_data <- self$clone(deep = TRUE) #clone parent geoflow_data to inherit all needed properties
@@ -490,6 +519,7 @@ geoflow_data <- R6Class("geoflow_data",
                   "gpkg" = "gpkg",
                   "tif" = "geotiff",
                   "csv" = "csv",
+                  "parquet" = "parquet",
                   "other" #including zip that will be resolved later when entity is enriched with data
                 )
               }
@@ -497,8 +527,9 @@ geoflow_data <- R6Class("geoflow_data",
                 ext_data$setSourceType(sourceType)
               }
               if((is.null(self$uploadType) || self$uploadType == "other") && !is.null(sourceType)){
-                ext_data$setUploadType(sourceType)
-                if(ext_data$uploadType == "geotiff") ext_data$setSpatialRepresentationType("grid")
+                print(sourceType)
+                if(sourceType != "zip") ext_data$setUploadType(sourceType)
+                if(!is.null(ext_data$uploadType)) if(ext_data$uploadType == "geotiff") ext_data$setSpatialRepresentationType("grid")
               }
               
               hasStoreDeclared <- FALSE
@@ -506,6 +537,17 @@ geoflow_data <- R6Class("geoflow_data",
               if(!is.null(self$store)) hasStoreDeclared <- TRUE
               if(!hasStoreDeclared) ext_data$setStore(ext_data_name)
               ext_data$setLayername(ext_data_name)
+              
+              #inherit layer metadata from data file register (if any)
+              if(!is.null(data_files_register)){
+                register_entry = data_files_register[data_files_register$code == ext_data_name,]
+                if(nrow(register_entry)>0){
+                  register_entry = register_entry[1L,]
+                  if(!is.na(register_entry$uri)) ext_data$setLayeruri(register_entry$uri)
+                  if(!is.na(register_entry$label)) ext_data$setLayertitle(register_entry$label)
+                  if(!is.na(register_entry$definition)) ext_data$setLayerdesc(register_entry$definition)
+                }
+              }
               
               if(self$styleUpload){
                 #we add all sld files to each child so they can be downloaded if needed
@@ -615,6 +657,13 @@ geoflow_data <- R6Class("geoflow_data",
       self$source <- source
     },
     
+    #'@description Set source FID, object of class \code{"character"} (single source FID), or \code{list}.
+    #' @param sourceFid sourceFid
+    setSourceFid = function(sourceFid){
+      if(!is(sourceFid, "list")) sourceFid <- list(sourceFid)
+      self$sourceFid <- sourceFid
+    },
+    
     #'@description This is a convenience method for users that want to specify directly
     #'    a SQL source. This method is called internally when a source SQL file has been set using
     #'    \code{setSource}
@@ -716,6 +765,24 @@ geoflow_data <- R6Class("geoflow_data",
     #'@param layername layername
     setLayername = function(layername){
       self$layername <- layername
+    },
+    
+    #'@description Sets a layer title, object of class \code{character}. If available, used as target layer title in SDI-related action.
+    #'@param layertitle layertitle
+    setLayertitle = function(layertitle){
+      self$layertitle = layertitle
+    },
+    
+    #'@description Sets a layer description, object of class \code{character}. If available, used as target layer description/abstract in SDI-related actions.
+    #'@param layerdesc layerdesc
+    setLayerdesc = function(layerdesc){
+      self$layerdesc = layerdesc
+    },
+    
+    #'@description Sets a layer URI, object of class \code{character}. If available, used as annotating URI for layer metadata (eg. in ISO 19115 action).
+    #'@param layeruri layeruri
+    setLayeruri = function(layeruri){
+      self$layeruri = layeruri
     },
     
     #'@description Adds a style name, object of class \code{character}. Used as layer style name(s) for GeoServer action.
@@ -893,11 +960,11 @@ geoflow_data <- R6Class("geoflow_data",
       software_types <- names(self$workspaces)
       for(software_type in software_types){
         workspace <- self$workspaces[[software_type]]
-        config$logger.info(sprintf("Check '%s' software availability for workspace '%s'", software_type, workspace))
+        config$logger$INFO("Check '%s' software availability for workspace '%s'", software_type, workspace)
         if(!software_type %in% names(config$software$input) &&
            !software_type %in% names(config$software$output)){
           errMsg <- sprintf("No software '%s' declared as input/output for workspace '%s'.", software_type, workspace)
-          config$logger.error(errMsg)
+          config$logger$ERROR(errMsg)
           stop(errMsg)
         }
       }
