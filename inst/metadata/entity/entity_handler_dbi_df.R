@@ -10,7 +10,8 @@ handle_entities_dbi_df = function(handler, source, config, validate = TRUE){
   handle_entities_df <- source(system.file("metadata/entity", "entity_handler_df.R", package = "geoflow"))$value
   entities <- handle_entities_df(handler, source, config, validate)
   
-  enriched_entities <- lapply(entities, function(entity){
+  for(i in seq_along(entities)){
+    entity <- entities[[i]]
     
     #skip DB enrichment if Data is already explicitly configured
     already_configured <- !is.null(entity$data) &&
@@ -22,7 +23,7 @@ handle_entities_dbi_df = function(handler, source, config, validate = TRUE){
         "Entity '%s' has an explicit Data configuration ('%s' + SQL), skipping data enrichment from DB",
         entity$identifiers$id, entity$data$uploadType
       ))
-      return(entity)
+      next
     }
     
     expected_table_id = entity$identifiers$id
@@ -40,8 +41,9 @@ handle_entities_dbi_df = function(handler, source, config, validate = TRUE){
       warnMsg = sprintf("No DB table named '%s' available, skipping data enrichment from DB!", expected_table_id)
       config$logger$WARN(warnMsg)
     }
-    return(entity)
-  })
+    #modify 'entities' in place (instead of lapply) to keep its attributes, e.g. 'source'
+    entities[[i]] <- entity
+  }
   
-  return(enriched_entities)
+  return(entities)
 }
