@@ -11,6 +11,20 @@ handle_entities_dbi_df = function(handler, source, config, validate = TRUE){
   entities <- handle_entities_df(handler, source, config, validate)
   
   enriched_entities <- lapply(entities, function(entity){
+    
+    #skip DB enrichment if Data is already explicitly configured
+    already_configured <- !is.null(entity$data) &&
+      !is.null(entity$data$uploadType) &&
+      entity$data$uploadType != "other" &&
+      !is.null(entity$data$sql)
+    if(already_configured){
+      config$logger$INFO(sprintf(
+        "Entity '%s' has an explicit Data configuration ('%s' + SQL), skipping data enrichment from DB",
+        entity$identifiers$id, entity$data$uploadType
+      ))
+      return(entity)
+    }
+    
     expected_table_id = entity$identifiers$id
     table_entry_sql = sprintf("SELECT * FROM information_schema.tables WHERE table_name = '%s'", expected_table_id)
     table_entry_query = DBI::dbGetQuery(dbi, table_entry_sql)
