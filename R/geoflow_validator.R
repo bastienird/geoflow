@@ -862,9 +862,7 @@ geoflow_validator_entity_Data <- R6Class("geoflow_validator_entity_Data",
       if(is.na(private$str)) return(report)
   
       data_props <- extract_cell_components(sanitize_str(private$str))
-      data_props <- lapply(data_props, function(data_prop){
-        return(extract_kvp(data_prop))
-      })
+      data_props <- extract_kvps(data_props)
       names(data_props) <- sapply(data_props, function(x){x$key})
       
       #access
@@ -893,7 +891,7 @@ geoflow_validator_entity_Data <- R6Class("geoflow_validator_entity_Data",
         }
         #check compliance of dbquery
         if(!is.null(data_props$sql)){
-          sqlquery <- data_props$sql
+          sqlquery <- paste(data_props$sql$values, collapse=",")
           #with fieldnames
           if(!all(sapply(params, function(x){regexpr(x$values[[1]],sqlquery)>0}))){
             report <- rbind(report, data.frame(type = "WARNING", message = "At least one parameter fieldname declared is not used in the data source query!"))
